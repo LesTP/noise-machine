@@ -41,3 +41,40 @@ Priority: Nice-to-have
 Decision: V1 stereo output is either identical or only very slightly decorrelated between channels. Width / motion / decorrelation controls are deferred to a later phase.
 Rationale: Aggressive stereo width or motion is distracting and attention-grabbing — the opposite of what a sleep app should feel like. Alternative considered: prominent stereo width slider — rejected as misaligned with the calm/appliance product feel.
 Revisit if: user feedback consistently asks for a subtle-width option that can be exposed without compromising the calm default.
+
+D-6: Min API 26, compileSdk / targetSdk 34, Java 17
+Date: 2026-04-16 | Status: Closed
+Priority: Important
+Decision: `minSdk = 26` (Android 8.0 Oreo), `compileSdk = 34`, `targetSdk = 34`, `sourceCompatibility = targetCompatibility = JavaVersion.VERSION_17`, `kotlinOptions.jvmTarget = "17"`.
+Rationale: API 26 covers ≈97% of active Android devices in 2026 and is the widely-used floor for modern Jetpack / Compose apps; it gives access to `AudioAttributes.USAGE_MEDIA`, MediaSession APIs, notification channels, and `AudioTrack.Builder` without legacy-path branching. compileSdk/targetSdk 34 (Android 14) is the highest stable API level with full AGP 8.7.x support and matches what is locally installed. Java 17 is the installed JDK and the current long-term recommendation for AGP 8.x. Alternatives considered: minSdk 24 (marginal ≈1–2% coverage gain, forces extra AudioTrack compat branches — rejected); compileSdk 35/36 (installed but paired with newer AGP requirements that destabilize Gradle 8.10 — rejected for V1).
+Revisit if: a concrete Android-14+ API materially improves audio stability or battery behavior and justifies raising targetSdk, or if a required dependency drops API 26 support.
+
+D-7: Sample rate 44100 Hz (provisional)
+Date: 2026-04-16 | Status: Open (provisional)
+Priority: Important
+Decision: Provisional 44100 Hz, 16-bit PCM, stereo. To be revisited during Step 3 (AudioEngine).
+Rationale: Widely supported on Android hardware; device-native rate may differ and will be queried via `AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE` during Step 3.
+Revisit in: Step 3.
+
+D-8: AudioTrack buffer size = 2× minBufferSize (provisional)
+Date: 2026-04-16 | Status: Open (provisional)
+Priority: Important
+Decision: Provisional buffer size of `AudioTrack.getMinBufferSize() * 2` as a glitch-margin starting point. To be tuned during Step 3 and validated for multi-hour stability during Phase 4.
+Rationale: Minimum buffer is an under-run threshold, not a comfortable operating point; 2× is the common safety multiplier for continuous generators. Too large wastes memory and increases parameter-change latency; too small invites under-runs on load spikes.
+Revisit in: Step 3 (initial tuning) and Phase 4 (long-session stability).
+
+D-9: Toolchain pins — AGP 8.7.3, Gradle 8.10.2, Kotlin 2.0.21, Compose BOM 2024.10.01
+Date: 2026-04-16 | Status: Closed
+Priority: Important
+Decision:
+- Android Gradle Plugin **8.7.3**
+- Gradle wrapper **8.10.2** (distribution-type `bin`)
+- Kotlin **2.0.21** (with the `org.jetbrains.kotlin.plugin.compose` plugin; no `kotlinCompilerExtensionVersion` block needed)
+- AndroidX Compose BOM **2024.10.01**; transitive versions (Material 3, UI, etc.) come from the BOM
+- AndroidX Core-KTX **1.13.1**, Activity-Compose **1.9.3**, Lifecycle-Runtime-KTX **2.8.7**
+- JUnit **4.13.2** for JVM unit tests
+- Version catalog lives in `gradle/libs.versions.toml`
+
+Rationale: AGP 8.7.x is the newest stable 8.x line and is the last one that cleanly pairs with Gradle 8.x (AGP 8.8+ and Gradle 9.x have known incompatibilities on some tasks). Gradle 8.10.2 is a well-tested point release. Kotlin 2.0.21 + the Compose Compiler Gradle Plugin is the current Kotlin 2.x–native approach (replaces the old `kotlinCompilerExtensionVersion` manual pinning). Compose BOM 2024.10.01 tracks Kotlin 2.0.x correctly. The installed system Gradle (9.4.0) is intentionally NOT used for the project build; the wrapper pins the version so that every contributor and CI runs the same Gradle regardless of system install. Alternatives considered: AGP 8.8+ with Gradle 9.x (rejected — more moving parts while we want a stable scaffold); bumping compileSdk to 35 or 36 (rejected — see D-6).
+
+Revisit if: Kotlin or AGP release a security fix or a materially better Compose-Compiler pairing; or if the local `PROJECT.md`/ARCHITECTURE.md requires an API only available above API 26 / targetSdk 34.

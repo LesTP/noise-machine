@@ -2,7 +2,7 @@
 module: core-playback
 phase: 1
 phase_title: Core Playback
-step: 1 of 5
+step: 2 of 5
 mode: Code
 blocked: null
 regime: Build
@@ -27,17 +27,19 @@ review_done: false
   - Must survive screen-off, backgrounding, and many-hour sessions without artifacts.
   - No in-app volume slider; native media volume only.
   - Parameter changes must go through smoothing — no zipper noise, no clicks/pops.
-- **Gotchas** — <!-- Add operational knowledge learned through trial-and-error here.
-  This is the most valuable section for autonomous agents. Examples:
-  - Build commands and their quirks
-  - Shell workarounds for specific environments
-  - Patterns that aren't obvious from the code
-  - Common failure modes and how to avoid them -->
+- **Gotchas** —
+  - **First build is slow.** Cold `.\gradlew.bat assembleDebug` takes ~4 min (wrapper bootstrap + dep download). Warm incremental builds should be well under 30 s with configuration cache.
+  - **Gradle daemon idle-hangs the invoking shell.** After `BUILD SUCCESSFUL` on Windows, the foreground `gradlew.bat` process often sits for minutes waiting for daemon idle-shutdown. Trust the Gradle-reported build time, not the shell's wall-clock.
+  - **`libandroidx.graphics.path.so` strip warning** is benign (missing NDK `strip` on Windows PATH); ignore it.
+  - **Use the wrapper, not system Gradle.** System `gradle` is 9.4.0, incompatible with AGP 8.7. Always call `.\gradlew.bat` or `./gradlew`.
+  - **`local.properties` is per-machine and gitignored.** If a fresh clone fails to find the SDK, write `sdk.dir=...` there.
+  - **Config cache can mask stale state.** If a build behaves weirdly after a big change, try `--no-configuration-cache` once.
+  <!-- Add more operational knowledge as learned through trial-and-error. -->
 
 ## Current Status
 
 - **Phase** — 1: Core Playback
-- **Focus** — Step 1: Android project scaffold
+- **Focus** — Step 2: NoiseSource (allocation-free white-noise generator + unit tests)
 - **Blocked/Broken** — None
 
 ## Phase 1: Core Playback
@@ -48,7 +50,7 @@ review_done: false
 
 ### Steps
 
-1. [ ] **Android project scaffold** — Gradle project (Kotlin, Compose, min API 26), AndroidManifest, empty MainActivity with Compose, verify clean build.
+1. [x] **Android project scaffold** — Gradle project (Kotlin, Compose, min API 26), AndroidManifest, empty MainActivity with Compose, verify clean build. *(done 2026-04-16; T7 passed)*
 2. [ ] **NoiseSource** — Allocation-free white-noise sample generator. Unit tests: mean ≈ 0, values in [-1,1], no repeated patterns, correct buffer fill.
 3. [ ] **AudioEngine** — Owns AudioTrack instance (16-bit PCM, 44100 Hz, stereo), dedicated render thread, start/stop API. NoiseSource wired in. Manual verification: audible white noise on device/emulator.
 4. [ ] **Compose UI + ViewModel** — Main screen with Play/Stop button. PlaybackViewModel exposes PlaybackState (Idle/Playing). Button triggers AudioEngine start/stop through ViewModel.
@@ -67,6 +69,7 @@ review_done: false
 | T7 | Build succeeds | `./gradlew assembleDebug` | Exit code 0 |
 
 ### Decisions to resolve during this phase
-- **D-6:** Min API level — provisionally API 26 (Android 8.0, ~95%+ coverage). Confirm during Step 1.
+- **D-6:** Min API level — *confirmed API 26, compileSdk/targetSdk 34 in Step 1; see DECISIONS.md.*
 - **D-7:** Sample rate — provisionally 44100 Hz. AudioTrack native rate may differ on some devices; resolve during Step 3.
 - **D-8:** AudioTrack buffer size — use `AudioTrack.getMinBufferSize() * 2` as starting point; tune during Step 3.
+- **D-9:** Toolchain pins (AGP 8.7.3 / Gradle 8.10.2 / Kotlin 2.0.21 / Compose BOM 2024.10.01) — *closed in Step 1; see DECISIONS.md.*

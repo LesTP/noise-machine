@@ -1,6 +1,26 @@
 # Loop runner artifacts (per-iteration transcripts, summary log)
 logs/loop/
 
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Android / SDK-specific (per-machine)
+local.properties
+*.iml
+.cxx/
+.externalNativeBuild/
+captures/
+
+# IntelliJ / Android Studio
+.idea/
+*.ipr
+*.iws
+
+# Kotlin
+.kotlin/
+
 # OS / editor noise
 .DS_Store
 Thumbs.db

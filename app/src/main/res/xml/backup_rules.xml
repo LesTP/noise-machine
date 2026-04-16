@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Minimal backup rules. Refine when persistence lands in Phase 3. -->
+<full-backup-content>
+</full-backup-content>
