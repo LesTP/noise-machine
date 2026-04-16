@@ -1,0 +1,7 @@
+# Loop runner artifacts (per-iteration transcripts, summary log)
+logs/loop/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
