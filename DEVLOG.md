@@ -11,18 +11,18 @@
 
 ### Phase 1: Core Playback
 
-<!-- Example entry format (from GOVERNANCE.md):
+### Phase Plan: Core Playback
+- **Mode:** Discuss
+- **Outcome:** complete
+- **Contract changes:** none
 
-### Step 1: [short title]
-- **Mode:** Code | Debug | Review | Discuss
-- **Outcome:** complete | partial | blocked
-- **Contract changes:** none | [list of affected documents]
+Broke Phase 1 into 5 steps covering the Build regime:
+1. Android project scaffold (Gradle, Compose, min API 26)
+2. NoiseSource (allocation-free white-noise generator + unit tests)
+3. AudioEngine (AudioTrack 16-bit PCM 44100Hz stereo, render thread, start/stop)
+4. Compose UI + ViewModel (Play/Stop button, PlaybackState)
+5. End-to-end wiring and integration tests
 
-[Free-form prose: what was done, decisions made, issues encountered]
+Test spec defined: 7 tests covering NoiseSource statistics, allocation-freedom, value range, AudioEngine lifecycle, rapid toggle safety, ViewModel state transitions, and build verification.
 
-### Contract Changes
-(Include this subsection only when a shared contract was modified)
-- ARCHITECTURE.md: updated [specific contract]
-- ARCH_module.md: changed [specific API]
-
--->
+Provisional decisions queued: min API 26 (D-6), sample rate 44100 Hz (D-7), buffer size 2× minimum (D-8) — to be confirmed during execution.
