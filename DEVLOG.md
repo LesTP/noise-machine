@@ -180,3 +180,16 @@ Tests in `app/src/test/java/com/noisemachine/app/audio/ParameterSmootherTest.kt`
 
 One decision closed:
 - **D-18** — ParameterSmoother algorithm: exponential ramp with `@Volatile` target, default 50 ms time constant at 44100 Hz. No locks needed — single volatile read per `next()` call.
+
+### Step 2: Biquad
+- **Mode:** Code
+- **Outcome:** complete — T11, T12, T12b, T13, T13b passed (5 tests). Total test count: 26 (15 Phase 1 + 6 ParameterSmoother + 5 Biquad), 0 failures. `testDebugUnitTest` BUILD SUCCESSFUL.
+- **Contract changes:** none
+
+Implemented `app/src/main/java/com/noisemachine/app/audio/Biquad.kt` — a generic second-order IIR filter using Direct Form II Transposed topology. Coefficients stored normalized (a0 = 1). Companion factory methods for `lowShelf`, `highShelf`, and `passthrough`. `setCoefficients()` allows in-place coefficient updates without allocation (needed by SpectralShaper for smooth Color transitions). `reset()` clears filter state for new playback sessions.
+
+Coefficient formulas follow the Audio EQ Cookbook (Robert Bristow-Johnson). Parameters: `sampleRate`, `freqHz` (shelf transition), `gainDb` (boost/cut), `q` (slope quality, default 0.707 Butterworth).
+
+Tests in `app/src/test/java/com/noisemachine/app/audio/BiquadTest.kt` use a band-energy comparison approach — feeding seeded white noise through the filter and comparing low-band vs high-band RMS energy via moving-average decomposition (avoids FFT dependency). T11 verifies low-shelf boost increases the low/high energy ratio by ≥50%. T12 verifies high-shelf cut has the same effect. T12b confirms passthrough is bit-exact identity. T13 is the standard heap-delta allocation test. T13b runs 5 seconds of filtered noise and asserts all samples are finite and bounded within ±10.0.
+
+No decisions closed in this step; D-16 (IIR topology) remains open until SpectralShaper chooses how many biquads to cascade and how to map Color to their parameters.

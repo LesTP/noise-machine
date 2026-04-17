@@ -2,7 +2,7 @@
 module: core-playback
 phase: 2
 phase_title: Color Engine
-step: 2 of 7
+step: 3 of 7
 mode: Code
 blocked: null
 regime: Build
@@ -43,7 +43,7 @@ review_done: false
 ## Current Status
 
 - **Phase** — 2: Color Engine
-- **Focus** — Step 2: Biquad (generic second-order IIR filter primitive)
+- **Focus** — Step 3: SpectralShaper (cascaded biquad chain driven by Color)
 - **Blocked/Broken** — None
 
 ## Phase 1: Core Playback — Complete
@@ -59,7 +59,7 @@ review_done: false
 ### Steps
 
 1. [x] **ParameterSmoother** — Lock-free exponential ramp for real-time parameter smoothing. *(done 2026-04-17; T8/T8b/T8c/T9/T10/T10b passed; D-18 closed)*
-2. [ ] **Biquad** — Generic second-order IIR filter (Direct Form II Transposed). Coefficient calculation for low-shelf and high-shelf. Allocation-free `process(buffer, length)`.
+2. [x] **Biquad** — Generic second-order IIR filter (Direct Form II Transposed). *(done 2026-04-17; T11/T12/T12b/T13/T13b passed)*
 3. [ ] **SpectralShaper** — Cascaded biquad chain driven by Color [0,1]. Maps Color to coordinated filter parameters (spectral tilt, HF attenuation, LF shaping). Processes mono buffer in-place. Initial coefficient curve; final tuning in Step 7.
 4. [ ] **GainSafety** — DC blocker (1st-order HPF ~20 Hz) + output normalization across Color range + hard-clip at ±1.0.
 5. [ ] **AudioEngine integration** — Wire ParameterSmoother + SpectralShaper + GainSafety into render loop. Add `setColor(Float)` to PlaybackController. Extend engine to accept color changes during playback.
