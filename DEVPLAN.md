@@ -2,7 +2,7 @@
 module: core-playback
 phase: 3
 phase_title: Productization
-step: 2 of 6
+step: 3 of 6
 mode: Code
 blocked: null
 regime: Build
@@ -41,12 +41,13 @@ review_done: false
   - **ParameterSmoother rate mismatch.** If calling `next()` per-buffer instead of per-sample, use `nextBlock(bufferSize)` to advance correctly. Calling `next()` once per buffer makes the effective time constant ~bufferSize× slower (~51 s instead of 50 ms at 1024-frame buffers).
   - **`@Volatile` on local variables.** Kotlin does not allow `@Volatile` on local variables — it's only valid on class properties. Use `AtomicBoolean` for cross-thread test state, or a regular `var` if the test is single-threaded with `Thread.join()`.
   - **IIR denormal stall (unconfirmed).** Audio stopped after ~10–15 min on emulator with HAL I/O errors (`pcm_writei failed: I/O error` from `ranchu` audio service). Initially suspected biquad denormal floats, but logcat shows the failure is in the emulator's virtual audio driver, not our app code. May be emulator-specific. Test on hardware device in Phase 4 before adding denormal protection.
+  - **`StandardTestDispatcher` needs `runCurrent()` after `advanceTimeBy()`.** Without it, coroutine continuations that resume at the advanced time are queued but not dispatched, so state changes after `delay()` aren't visible.
   <!-- Add more operational knowledge as learned through trial-and-error. -->
 
 ## Current Status
 
 - **Phase** — 3: Productization
-- **Focus** — Step 3.2: PlaybackState expansion + ViewModel fade orchestration
+- **Focus** — Step 3.3: TimerState + countdown coroutine + timer→fade-out integration
 - **Blocked/Broken** — None
 
 ## Phase 1: Core Playback — Complete

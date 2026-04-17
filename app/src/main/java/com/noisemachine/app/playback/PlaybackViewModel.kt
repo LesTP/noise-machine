@@ -2,31 +2,37 @@ package com.noisemachine.app.playback
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.noisemachine.app.audio.AudioEngine
 import com.noisemachine.app.audio.AudioTrackSink
 import com.noisemachine.app.audio.PlaybackController
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 /**
  * State holder for the main screen. Owns the [PlaybackController] for the
  * lifetime of the screen and exposes a [StateFlow] of [PlaybackState] for
  * Compose to collect.
  *
+ * Fade behavior is controlled by [fadeInMs] and [fadeOutMs]:
+ * - When 0, play/stop are immediate (Phase 1/2 backward compat).
+ * - When > 0, the ViewModel orchestrates gain ramps via [PlaybackController.setGain]
+ *   and transitions through [PlaybackState.FadingIn] / [PlaybackState.FadingOut].
+ *
  * Threading: UI events arrive on the main thread; controller calls
  * (`start()` / `stop()`) are themselves thread-safe (`AudioEngine` uses a
- * `ReentrantLock`). State writes are synchronous and happen on whatever
- * thread invoked the event handler — fine because [MutableStateFlow] is
- * thread-safe.
- *
- * Error policy (Phase 1): controller failures revert state to [PlaybackState.Idle]
- * and are swallowed. A richer event/error surface for the UI lands in
- * Phase 3 (productization).
+ * `ReentrantLock`). State writes are synchronous or from `viewModelScope`
+ * (Main dispatcher) — fine because [MutableStateFlow] is thread-safe.
  */
 class PlaybackViewModel(
     private val controller: PlaybackController,
+    private val fadeInMs: Long = 0L,
+    private val fadeOutMs: Long = 0L,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<PlaybackState>(PlaybackState.Idle)
@@ -35,6 +41,8 @@ class PlaybackViewModel(
     private val _color = MutableStateFlow(0f)
     val color: StateFlow<Float> = _color.asStateFlow()
 
+    private var fadeJob: Job? = null
+
     fun onColorChanged(color: Float) {
         val c = color.coerceIn(0f, 1f)
         _color.value = c
@@ -42,34 +50,76 @@ class PlaybackViewModel(
     }
 
     fun onPlayClicked() {
-        if (_state.value == PlaybackState.Playing) return
-        try {
-            controller.start()
-            _state.value = PlaybackState.Playing
-        } catch (_: Throwable) {
-            // Best-effort: ensure state stays/returns to Idle so the UI can recover.
-            _state.value = PlaybackState.Idle
+        val current = _state.value
+        if (current == PlaybackState.Playing || current == PlaybackState.FadingIn) return
+
+        // Cancel any active fade-out.
+        fadeJob?.cancel()
+        fadeJob = null
+
+        if (fadeInMs > 0) {
+            _state.value = PlaybackState.FadingIn
+            try {
+                controller.snapGain(0f)
+                controller.start()
+                controller.setGain(1f)
+            } catch (_: Throwable) {
+                _state.value = PlaybackState.Idle
+                return
+            }
+            fadeJob = viewModelScope.launch {
+                delay(fadeInMs)
+                _state.value = PlaybackState.Playing
+            }
+        } else {
+            try {
+                controller.start()
+                _state.value = PlaybackState.Playing
+            } catch (_: Throwable) {
+                _state.value = PlaybackState.Idle
+            }
         }
     }
 
     fun onStopClicked() {
-        if (_state.value == PlaybackState.Idle) return
-        try {
-            controller.stop()
-        } catch (_: Throwable) {
-            // Stop failures are non-recoverable for this session, but the user-
-            // facing state must still settle to Idle so they can try again.
-        }
-        _state.value = PlaybackState.Idle
-    }
+        val current = _state.value
+        if (current == PlaybackState.Idle) return
 
-    public override fun onCleared() {
-        // Prevent the audio render thread from outliving the ViewModel.
-        if (_state.value == PlaybackState.Playing) {
+        // Cancel any active fade-in.
+        fadeJob?.cancel()
+        fadeJob = null
+
+        if (fadeOutMs > 0 && current != PlaybackState.FadingOut) {
+            _state.value = PlaybackState.FadingOut
+            controller.setGain(0f)
+            fadeJob = viewModelScope.launch {
+                delay(fadeOutMs)
+                try {
+                    controller.stop()
+                } catch (_: Throwable) {
+                    // Stop failures are non-recoverable.
+                }
+                _state.value = PlaybackState.Idle
+            }
+        } else {
             try {
                 controller.stop()
             } catch (_: Throwable) {
-                // Same rationale as onStopClicked().
+                // Stop failures are non-recoverable.
+            }
+            _state.value = PlaybackState.Idle
+        }
+    }
+
+    public override fun onCleared() {
+        fadeJob?.cancel()
+        fadeJob = null
+        val current = _state.value
+        if (current != PlaybackState.Idle) {
+            try {
+                controller.stop()
+            } catch (_: Throwable) {
+                // Best-effort cleanup.
             }
             _state.value = PlaybackState.Idle
         }
@@ -87,7 +137,18 @@ class PlaybackViewModel(
                 "Factory only creates PlaybackViewModel; got $modelClass"
             }
             val engine = AudioEngine(sinkFactory = { AudioTrackSink() })
-            return PlaybackViewModel(engine) as T
+            return PlaybackViewModel(
+                controller = engine,
+                fadeInMs = DEFAULT_FADE_IN_MS,
+                fadeOutMs = DEFAULT_FADE_OUT_MS,
+            ) as T
         }
+    }
+
+    companion object {
+        /** Default fade-in duration (D-25). */
+        const val DEFAULT_FADE_IN_MS = 2_000L
+        /** Default fade-out duration (D-25). */
+        const val DEFAULT_FADE_OUT_MS = 5_000L
     }
 }

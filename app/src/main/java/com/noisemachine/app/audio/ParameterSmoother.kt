@@ -80,4 +80,14 @@ class ParameterSmoother(
         }
         return current
     }
+    /**
+     * Instantly set both current and target to [value], bypassing the ramp.
+     * Use for initialization before the render loop starts (e.g., snapping
+     * gain to 0 before a fade-in). Must be called from the same thread
+     * that calls [next]/[nextBlock], or before the render thread starts.
+     */
+    fun snapTo(value: Float) {
+        target = value
+        current = value
+    }
 }

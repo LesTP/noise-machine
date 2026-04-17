@@ -88,7 +88,9 @@ private fun PlaybackControls(
 
         when (state) {
             PlaybackState.Idle -> Button(onClick = onPlay) { Text("Play") }
+            PlaybackState.FadingIn -> Button(onClick = onStop, enabled = true) { Text("Stop") }
             PlaybackState.Playing -> Button(onClick = onStop) { Text("Stop") }
+            PlaybackState.FadingOut -> Button(onClick = {}, enabled = false) { Text("Stopping…") }
         }
 
         Text(

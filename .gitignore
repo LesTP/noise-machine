@@ -25,3 +25,4 @@ captures/
 .DS_Store
 Thumbs.db
 *.swp
+*.logcat

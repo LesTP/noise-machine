@@ -91,6 +91,15 @@ class AudioEngine(
     }
 
     /**
+     * Instantly set the master gain, bypassing the smoother ramp.
+     * Used to initialize gain before starting playback (e.g., snap to 0
+     * before a fade-in). Must be called before [start] or while stopped.
+     */
+    override fun snapGain(gain: Float) {
+        gainSmoother.snapTo(gain.coerceIn(0f, 1f))
+    }
+
+    /**
      * Begin playback. No-op if already playing. Returns once the render
      * thread has been launched (the first audio buffer may not yet have been
      * delivered to the sink).

@@ -1,25 +1,50 @@
 package com.noisemachine.app.playback
 
 import com.noisemachine.app.audio.PlaybackController
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
+import org.junit.Before
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Unit tests for [PlaybackViewModel] covering Phase-1 test spec T6 and the
- * T6a..T6h sub-tests added during the Step-4 phase plan
- * (see DEVPLAN.md, Phase 1 Test Spec).
+ * Unit tests for [PlaybackViewModel] covering Phase-1 test spec T6/T6a..T6h
+ * and Phase-3 fade tests T23/T24/T25.
  *
  * Tests use a [FakeController] in place of `AudioEngine` so the ViewModel's
  * state-machine and idempotency contracts are validated independently of the
  * audio pipeline (see DECISIONS.md D-13).
+ *
+ * Phase-1 tests use default `fadeInMs=0, fadeOutMs=0` so behavior is immediate
+ * and unchanged. Phase-3 fade tests use non-zero durations with [StandardTestDispatcher].
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class PlaybackViewModelTest {
 
+    private val testDispatcher = StandardTestDispatcher()
+
+    @Before
+    fun setUp() {
+        Dispatchers.setMain(testDispatcher)
+    }
+
+    @After
+    fun tearDown() {
+        Dispatchers.resetMain()
+    }
+
     /**
-     * Records start/stop call counts and lets a single [start] call throw on
-     * demand, in support of T6h.
+     * Records start/stop/gain call counts and lets a single [start] call
+     * throw on demand, in support of T6h.
      */
     private class FakeController : PlaybackController {
         val startCalls = AtomicInteger(0)
@@ -49,10 +74,19 @@ class PlaybackViewModelTest {
         }
 
         @Volatile var lastGain: Float = 1f
+        val gainHistory = mutableListOf<Float>()
         override fun setGain(gain: Float) {
             lastGain = gain
+            synchronized(gainHistory) { gainHistory.add(gain) }
+        }
+
+        @Volatile var lastSnapGain: Float = 1f
+        override fun snapGain(gain: Float) {
+            lastSnapGain = gain
         }
     }
+
+    // ── Phase 1 tests (fadeInMs=0, fadeOutMs=0) ──────────────────────
 
     /** T6a — initial state is Idle and the controller is untouched. */
     @Test
@@ -175,5 +209,92 @@ class PlaybackViewModelTest {
         vm.onPlayClicked()
         assertSame(PlaybackState.Playing, vm.state.value)
         assertEquals(2, controller.startCalls.get())
+    }
+
+    // ── Phase 3 fade tests ──────────────────────────────────────────
+
+    /**
+     * T23 — fade-in state sequence: onPlayClicked() → FadingIn → Playing.
+     *
+     * Verifies: state transitions to FadingIn immediately, controller.start
+     * is called, gain is snapped to 0 then set to 1, and after fadeInMs
+     * the state transitions to Playing.
+     */
+    @Test
+    fun fade_in_state_sequence() = runTest(testDispatcher) {
+        val controller = FakeController()
+        val vm = PlaybackViewModel(controller, fadeInMs = 500, fadeOutMs = 0)
+
+        vm.onPlayClicked()
+
+        // Immediately after click: FadingIn, engine started, gain snapped to 0 then set to 1.
+        assertSame(PlaybackState.FadingIn, vm.state.value)
+        assertEquals(1, controller.startCalls.get())
+        assertEquals(0f, controller.lastSnapGain, 0.001f)
+        assertEquals(1f, controller.lastGain, 0.001f)
+
+        // Advance past the fade duration and run the pending continuation.
+        advanceTimeBy(500)
+        runCurrent()
+
+        assertSame(PlaybackState.Playing, vm.state.value)
+    }
+
+    /**
+     * T24 — fade-out state sequence: onStopClicked() while Playing → FadingOut → Idle.
+     *
+     * Verifies: state transitions to FadingOut immediately, gain set to 0,
+     * controller.stop NOT called yet, and after fadeOutMs the state is Idle
+     * and controller.stop has been called.
+     */
+    @Test
+    fun fade_out_state_sequence() = runTest(testDispatcher) {
+        val controller = FakeController()
+        val vm = PlaybackViewModel(controller, fadeInMs = 0, fadeOutMs = 500)
+
+        vm.onPlayClicked() // → Playing (immediate, no fade-in)
+        assertSame(PlaybackState.Playing, vm.state.value)
+
+        vm.onStopClicked()
+
+        // Immediately after stop: FadingOut, gain ramping to 0, engine still running.
+        assertSame(PlaybackState.FadingOut, vm.state.value)
+        assertEquals(0f, controller.lastGain, 0.001f)
+        assertEquals(0, controller.stopCalls.get())
+
+        // Advance past the fade duration and run the pending continuation.
+        advanceTimeBy(500)
+        runCurrent()
+
+        assertSame(PlaybackState.Idle, vm.state.value)
+        assertEquals(1, controller.stopCalls.get())
+    }
+
+    /**
+     * T25
+     * T25 — fade-out completion: controller.stop() called only after delay.
+     *
+     * Verifies that stop is not called prematurely at the halfway point,
+     * and is called exactly once after the full fade duration.
+     */
+    @Test
+    fun fade_out_stop_only_after_full_delay() = runTest(testDispatcher) {
+        val controller = FakeController()
+        val vm = PlaybackViewModel(controller, fadeInMs = 0, fadeOutMs = 1000)
+
+        vm.onPlayClicked()
+        vm.onStopClicked()
+
+        // Half the fade: still fading out, stop not called.
+        advanceTimeBy(500)
+        runCurrent()
+        assertSame(PlaybackState.FadingOut, vm.state.value)
+        assertEquals(0, controller.stopCalls.get())
+
+        // Rest of the fade: stop called, state is Idle.
+        advanceTimeBy(500)
+        runCurrent()
+        assertSame(PlaybackState.Idle, vm.state.value)
+        assertEquals(1, controller.stopCalls.get())
     }
 }

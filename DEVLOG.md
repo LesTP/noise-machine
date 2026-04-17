@@ -326,3 +326,20 @@ Added master gain support to the audio engine for fade-in/fade-out (D-21):
 
 One decision closed:
 - **D-21** — Fade mechanism: second ParameterSmoother for master gain in AudioEngine, applied post-GainSafety. Reuses proven smoother; gain ≤ 1.0 preserves clip guarantee.
+
+### Step 2: PlaybackState expansion + fade orchestration
+- **Mode:** Code
+- **Outcome:** complete — T23, T24, T25 passed. Total test count: 43 (40 Phase 1–3.1 + 3 new), 0 failures.
+- **Contract changes:** `PlaybackController` — added `snapGain(gain: Float)`. `ParameterSmoother` — added `snapTo(value: Float)`. `PlaybackState` — added `FadingIn`, `FadingOut` variants.
+
+Added fade-in/fade-out orchestration to the ViewModel:
+
+- `ParameterSmoother.kt` — added `snapTo(value)` to instantly set both current and target, bypassing the ramp. Used for fade-in initialization.
+- `PlaybackController.kt` — added `fun snapGain(gain: Float)` to interface. `AudioEngine` implements via `gainSmoother.snapTo()`.
+- `PlaybackState.kt` — expanded sealed interface: `Idle | FadingIn | Playing | FadingOut`.
+- `PlaybackViewModel.kt` — added `fadeInMs`/`fadeOutMs` constructor params (default 0 for backward compat). Fade-in: snapGain(0) → start → setGain(1) → delay → Playing. Fade-out: setGain(0) → delay → stop → Idle. Uses `viewModelScope.launch` with cancellable jobs. Production Factory uses 2s/5s defaults (D-25).
+- `MainActivity.kt` — updated `when` expression for exhaustive match on new states. FadingIn shows Stop button, FadingOut shows disabled "Stopping…" button.
+- `PlaybackViewModelTest.kt` — T23 verifies fade-in state sequence (FadingIn → Playing after delay). T24 verifies fade-out state sequence (FadingOut → Idle after delay, stop called only then). T25 verifies stop is not called prematurely at halfway point. All use `StandardTestDispatcher` + `runCurrent()`.
+- `libs.versions.toml` + `build.gradle.kts` — added `kotlinx-coroutines-test:1.7.3` as testImplementation.
+
+Gotcha: `StandardTestDispatcher` requires `runCurrent()` after `advanceTimeBy()` to execute coroutine continuations that resume at the advanced time. Without it, the continuation is queued but not dispatched.

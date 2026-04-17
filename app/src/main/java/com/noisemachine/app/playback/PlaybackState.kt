@@ -3,11 +3,13 @@ package com.noisemachine.app.playback
 /**
  * UI-facing playback state.
  *
- * Phase 1 ships only `Idle` and `Playing` per DEVPLAN's Step 4 scope. The
- * fuller `Starting(fadeIn) | FadingOut(remainingMs) | Stopped` shape from
- * ARCHITECTURE.md is Phase 2/3 territory and is intentionally deferred.
+ * Phase 3 adds [FadingIn] and [FadingOut] for smooth volume transitions.
+ * When fade durations are zero, only [Idle] and [Playing] are used
+ * (backward compatible with Phase 1/2 behavior).
  */
 sealed interface PlaybackState {
     data object Idle : PlaybackState
+    data object FadingIn : PlaybackState
     data object Playing : PlaybackState
+    data object FadingOut : PlaybackState
 }
