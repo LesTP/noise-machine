@@ -387,4 +387,43 @@ class PlaybackViewModelTest {
         runCurrent()
         assertSame(TimerState.Off, vm.timerState.value)
     }
+
+    // ── Phase 3 persistence tests ───────────────────────────────────
+
+    private class FakePrefsStore(
+        override var color: Float = 0f,
+        override var timerDurationMs: Long = 0L,
+    ) : PrefsStore
+
+    /**
+     * T29 — Saved Color restored on fresh ViewModel construction.
+     *
+     * Verifies that a non-zero color from prefs is applied to both the
+     * StateFlow and the controller on init.
+     */
+    @Test
+    fun saved_color_restored_on_construction() {
+        val controller = FakeController()
+        val prefs = FakePrefsStore(color = 0.7f)
+        val vm = PlaybackViewModel(controller, prefs = prefs)
+
+        assertEquals(0.7f, vm.color.value, 0.001f)
+        assertEquals(0.7f, controller.lastColor, 0.001f)
+    }
+
+    /**
+     * T30 — Saved timer duration restored on fresh ViewModel construction.
+     *
+     * Verifies that lastTimerDurationMs reflects the persisted value and
+     * the timer is NOT auto-armed (still Off).
+     */
+    @Test
+    fun saved_timer_duration_restored_on_construction() {
+        val controller = FakeController()
+        val prefs = FakePrefsStore(timerDurationMs = 1_800_000L)
+        val vm = PlaybackViewModel(controller, prefs = prefs)
+
+        assertEquals(1_800_000L, vm.lastTimerDurationMs)
+        assertSame(TimerState.Off, vm.timerState.value)
+    }
 }

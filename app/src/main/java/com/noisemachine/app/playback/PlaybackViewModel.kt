@@ -33,6 +33,7 @@ class PlaybackViewModel(
     private val controller: PlaybackController,
     private val fadeInMs: Long = 0L,
     private val fadeOutMs: Long = 0L,
+    private val prefs: PrefsStore? = null,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<PlaybackState>(PlaybackState.Idle)
@@ -44,13 +45,27 @@ class PlaybackViewModel(
     private val _timerState = MutableStateFlow<TimerState>(TimerState.Off)
     val timerState: StateFlow<TimerState> = _timerState.asStateFlow()
 
+    /** Last selected timer duration, restored from prefs for UI pre-selection. */
+    var lastTimerDurationMs: Long = 0L
+        private set
+
     private var fadeJob: Job? = null
     private var timerJob: Job? = null
+
+    init {
+        prefs?.let {
+            val savedColor = it.color.coerceIn(0f, 1f)
+            _color.value = savedColor
+            controller.setColor(savedColor)
+            lastTimerDurationMs = it.timerDurationMs
+        }
+    }
 
     fun onColorChanged(color: Float) {
         val c = color.coerceIn(0f, 1f)
         _color.value = c
         controller.setColor(c)
+        prefs?.let { it.color = c }
     }
 
     fun onPlayClicked() {
@@ -87,6 +102,8 @@ class PlaybackViewModel(
 
     fun onTimerSelected(durationMs: Long) {
         timerJob?.cancel()
+        lastTimerDurationMs = durationMs
+        prefs?.let { it.timerDurationMs = durationMs }
         _timerState.value = TimerState.Armed(durationMs)
         timerJob = viewModelScope.launch {
             var remaining = durationMs
@@ -162,11 +179,14 @@ class PlaybackViewModel(
             require(modelClass.isAssignableFrom(PlaybackViewModel::class.java)) {
                 "Factory only creates PlaybackViewModel; got $modelClass"
             }
+            val app = extras[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY]
+                ?: error("APPLICATION_KEY not available in CreationExtras")
             val engine = AudioEngine(sinkFactory = { AudioTrackSink() })
             return PlaybackViewModel(
                 controller = engine,
                 fadeInMs = DEFAULT_FADE_IN_MS,
                 fadeOutMs = DEFAULT_FADE_OUT_MS,
+                prefs = SharedPrefsStore(app),
             ) as T
         }
     }

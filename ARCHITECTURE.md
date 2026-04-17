@@ -13,7 +13,7 @@
 | GainSafety | Output normalization across Color range, DC/low-end protection, clipping avoidance, fade-in/fade-out | none |
 | StereoStage | Stereo routing; later optional subtle channel decorrelation | none |
 | TextureShaper *(deferred)* | Secondary perceptual grain/smoothness control | ParameterSmoother |
-| Persistence | Stores last Color and timer selection (DataStore / SharedPreferences) | none |
+| Persistence | Stores last Color and timer selection (SharedPreferences behind PrefsStore interface) | none |
 
 ## Data Flow
 

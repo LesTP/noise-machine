@@ -2,7 +2,7 @@
 module: core-playback
 phase: 3
 phase_title: Productization
-step: 4 of 6
+step: 5 of 6
 mode: Code
 blocked: null
 regime: Build
@@ -47,7 +47,7 @@ review_done: false
 ## Current Status
 
 - **Phase** — 3: Productization
-- **Focus** — Step 3.4: Persistence via DataStore (Color + timer duration)
+- **Focus** — Step 3.5: Settings screen + timer chip on main screen + navigation
 - **Blocked/Broken** — None
 
 ## Phase 1: Core Playback — Complete
@@ -115,7 +115,7 @@ review_done: false
 |----|----------|---------|
 | **D-21** | Fade mechanism: second `ParameterSmoother` for master gain in AudioEngine, applied post-GainSafety? | Yes — reuses proven smoother; gain ≤ 1.0 preserves clip guarantee |
 | **D-22** | Timer architecture: separate `StateFlow<TimerState>` parallel to `PlaybackState`, or merge into one sealed hierarchy? | Separate — avoids state explosion, timer is orthogonal to play/stop |
-| **D-23** | Persistence: `DataStore<Preferences>` vs `SharedPreferences`? | DataStore — modern, coroutine-native, no main-thread risk |
+| **D-23** | Persistence: `DataStore<Preferences>` vs `SharedPreferences`? | **Closed** — SharedPreferences; 2 scalars, no reactive reads, zero new deps |
 | **D-24** | Settings navigation: simple `var showSettings` state toggle vs `NavHost`? | State toggle — two screens, no deep linking needed, avoids extra dep |
 | **D-25** | Fade default durations: fade-in 2s, fade-out 5s? | Reasonable defaults; configurable in Settings |
 
@@ -123,5 +123,72 @@ review_done: false
 
 | Library | Purpose |
 |---------|---------|
-| `androidx.datastore:datastore-preferences` | Persist Color + timer values |
+| *(none needed — SharedPreferences is in the SDK)* | Persist Color + timer values |
 | `org.jetbrains.kotlinx:kotlinx-coroutines-test` | Test timer countdown with TestDispatcher |
+
+## Phase 4: Background Robustness
+
+**Regime:** Build
+**Scope:** Foreground service, persistent notification, screen-off survival, timer migration to service scope, audio focus.
+
+**Motivation:** Without a foreground service, `LifecycleEventEffect(ON_STOP)` kills audio on Home press or screen-off. Phase 4 replaces this with a service that owns `AudioEngine` lifecycle, making the app usable as a sleep app.
+
+### Steps
+
+| Step | Scope | Tests |
+|------|-------|-------|
+| **4.1** | `PlaybackService` skeleton: foreground service + notification channel + `startForeground()`. Engine starts/stops via service intents. No ViewModel wiring yet. | T32, T33 |
+| **4.2** | Service ↔ ViewModel binding: VM binds to service, delegates `start()`/`stop()`/`setColor()`/`setGain()` through binder. Factory updated. | T34 |
+| **4.3** | Timer migration: move countdown coroutine from `viewModelScope` to service scope so timer survives Activity stop. | T35 |
+| **4.4** | Notification actions: Play/Stop buttons on the notification that control the service. | T36 |
+| **4.5** | Permission handling: `POST_NOTIFICATIONS` runtime permission on API 33+. Graceful degradation on deny. | T37 |
+| **4.6** | End-to-end manual verification: screen-off, Home press, task kill, timer expiry while backgrounded, multi-hour run. | M31–M40 |
+
+### Test Spec
+
+**Unit / Integration Tests:**
+
+| Test | Verifies |
+|------|----------|
+| **T32** | Service starts foreground with notification |
+| **T33** | Service stops engine on `stopSelf()` / `onDestroy()` |
+| **T34** | ViewModel delegates play/stop to bound service |
+| **T35** | Timer countdown continues when ViewModel is cleared (service-scoped coroutine) |
+| **T36** | Notification stop action triggers service stop + fade-out |
+| **T37** | `assembleDebug` succeeds with permission declaration + runtime check |
+
+**Manual Tests:**
+
+| Test | Verifies |
+|------|----------|
+| **M31** | Audio continues after pressing Home |
+| **M32** | Audio continues after screen off |
+| **M33** | Notification visible with Play/Stop action |
+| **M34** | Notification Stop triggers fade-out + silence |
+| **M35** | Timer countdown continues after backgrounding |
+| **M36** | Timer expiry while backgrounded triggers fade-out + silence |
+| **M37** | Swiping app from recents stops audio (`onTaskRemoved`) |
+| **M38** | Re-opening app while playing shows correct UI state |
+| **M39** | Color slider changes apply while backgrounded (via notification return) |
+| **M40** | Multi-hour uninterrupted playback (≥2h) without glitches |
+
+### Decisions to Queue
+
+| ID | Question | Leaning |
+|----|----------|---------|
+| **D-26** | Service binding: bound service with `Binder` vs intent-only communication? | Binder — VM needs synchronous access to `isPlaying`, `setColor()`, `setGain()` |
+| **D-27** | Notification style: `MediaStyle` with `MediaSession` vs plain notification with custom actions? | Plain notification — no media session needed, simpler |
+| **D-28** | Timer ownership: move timer coroutine to service, or keep in VM and relay via binding? | Service — timer must survive Activity destruction |
+| **D-29** | `onTaskRemoved` behavior: stop audio, or keep playing? | Stop — user swiping is explicit dismissal intent |
+| **D-30** | Audio focus: request `AUDIOFOCUS_GAIN` on start, duck/pause on loss? | Yes — standard Android audio app behavior |
+
+### New Dependencies
+
+| Library | Purpose |
+|---------|---------|
+| *(none expected)* | Foreground service, notification, binding are all Android SDK |
+
+### Known Risks
+
+- **Robolectric service testing** — `startForeground()` may need instrumented tests if Robolectric is insufficient. Some T32–T36 tests may become manual verification only.
+- **Emulator denormal stall** — Phase 2 known issue (audio stops after ~10–15 min). Needs hardware testing or longer emulator sessions. If reproducible, add flush-to-zero in render loop.

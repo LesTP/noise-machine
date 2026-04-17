@@ -356,3 +356,18 @@ Added auto-stop countdown timer as a separate `StateFlow<TimerState>` parallel t
 - `PlaybackViewModelTest.kt` — T26 verifies countdown ticks (Armed(60000) → Armed(59000) → Armed(58000) after 1s + 1s). T27 verifies timer expiry triggers fade-out (3s timer → FadingOut → Idle after fade completes). T28 verifies manual stop cancels timer (Armed resets to Off, no re-arm after advancing past original duration).
 
 Edge case handling: timer expiry calls `onStopClicked()` which cancels `timerJob` — safe because the coroutine is past its last suspension point. Timer armed while not playing still counts down; if it expires and playback is idle, `onStopClicked()` is a no-op (existing idle guard). Timer cleanup in `onStopClicked()` is placed before the idle guard so it always runs.
+
+### Step 4: Persistence via SharedPreferences
+- **Mode:** Code
+- **Outcome:** complete — T29, T30 passed. Total test count: 48 (46 Phase 1–3.3 + 2 new), 0 failures.
+- **Contract changes:** `PlaybackViewModel` constructor — added optional `prefs: PrefsStore?` parameter (default `null`, backward-compatible with existing tests).
+
+Added persistence of Color and timer duration across app restarts (D-23):
+
+- `PrefsStore.kt` — new interface with `var color: Float` and `var timerDurationMs: Long`. Abstracts storage so the VM stays pure-JVM testable.
+- `SharedPrefsStore.kt` — production implementation backed by `SharedPreferences`. Synchronous reads (negligible for 2 scalars), `apply()` for async writes.
+- `PlaybackViewModel.kt` — added `prefs: PrefsStore?` constructor param. Init block restores saved color (sets `_color` + `controller.setColor()`) and timer duration (`lastTimerDurationMs` for UI pre-selection, timer not auto-armed). `onColorChanged()` persists color; `onTimerSelected()` persists duration. Factory updated to obtain `Application` from `CreationExtras.APPLICATION_KEY` and pass `SharedPrefsStore` to VM.
+- `PlaybackViewModelTest.kt` — added `FakePrefsStore` (in-memory backing). T29 verifies saved color restored on construction (both StateFlow and controller). T30 verifies saved timer duration restored without auto-arming.
+
+One decision closed:
+- **D-23** — SharedPreferences over DataStore. Only 2 scalar values, read once at startup, no reactive/Flow requirement. Zero new dependencies.
