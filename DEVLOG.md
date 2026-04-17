@@ -443,3 +443,12 @@ Phase 3 delivered productization features: smooth fade-in/fade-out via gain smoo
 **Key artifacts:**
 - New: `TimerState.kt`, `PrefsStore.kt`, `SharedPrefsStore.kt`, `ic_timer.xml`
 - Modified: `PlaybackState.kt`, `PlaybackViewModel.kt`, `PlaybackViewModelTest.kt`, `AudioEngine.kt`, `PlaybackController.kt`, `ParameterSmoother.kt`, `MainActivity.kt`
+
+### Phase 4: Background Robustness
+
+### Phase Plan: Background Robustness
+- **Mode:** Discuss
+- **Outcome:** complete
+- **Contract changes:** none
+
+Broke Phase 4 into 5 steps: PlaybackService skeleton, service↔ViewModel binding, timer migration to service scope, notification stop action + audio focus + onTaskRemoved, end-to-end verification. Test spec: T32–T37, M31–M40. Five decisions closed (D-26–D-30): Binder binding, plain notification, timer in service, stop on task-removed, audio focus gain.

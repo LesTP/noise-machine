@@ -156,3 +156,38 @@ Priority: Nice-to-have
 Decision: Default fade-in duration is 2000ms, fade-out duration is 5000ms. Constants live in `PlaybackViewModel.Companion` and are passed via the production Factory. Test VMs use 0ms for deterministic tests.
 Rationale: 2s fade-in is long enough to avoid an abrupt start but short enough to feel responsive. 5s fade-out gives a gentle wind-down suitable for sleep context. These are the values used throughout Phase 3 development. Configurable via Settings screen (read-only display for now).
 Revisit if: user feedback suggests different defaults, or if per-user configurability is added in a future phase.
+
+D-26: Service binding — Binder over intent-only
+Date: 2026-04-17 | Status: Closed
+Priority: Important
+Decision: ViewModel communicates with PlaybackService via a bound service with `Binder`, not intent-only messaging.
+Rationale: VM needs synchronous access to `isPlaying`, `setColor()`, `setGain()`. Intent-based communication is too asynchronous for continuous slider updates (~16ms touch events). Binder gives direct method calls on the service object.
+Revisit if: multi-process architecture is needed (Binder is in-process only).
+
+D-27: Notification style — plain notification over MediaStyle
+Date: 2026-04-17 | Status: Closed
+Priority: Nice-to-have
+Decision: Use a plain notification with a single Stop action button. No `MediaStyle`, no `MediaSession`.
+Rationale: The app needs only a stop button on the notification. MediaStyle adds lock-screen controls, Bluetooth metadata, and media routing — none of which add value for a white noise sleep app. Plain notification is simpler and sufficient.
+Revisit if: users request lock-screen playback controls or Bluetooth display metadata.
+
+D-28: Timer ownership — service-scoped over ViewModel-scoped
+Date: 2026-04-17 | Status: Closed
+Priority: Important
+Decision: The countdown timer coroutine runs in the service's `CoroutineScope`, not `viewModelScope`. The ViewModel observes timer state from the service via binding.
+Rationale: The timer must survive Activity destruction (screen-off, Home press). `viewModelScope` is cancelled when the Activity is destroyed; the service persists.
+Revisit if: timer needs to survive service restarts (would require persistence + reschedule).
+
+D-29: onTaskRemoved — stop audio on swipe-dismiss
+Date: 2026-04-17 | Status: Closed
+Priority: Nice-to-have
+Decision: Override `onTaskRemoved()` to call `stopSelf()`, stopping audio when the user swipes the app from recents.
+Rationale: Swiping from recents is an explicit dismissal gesture. Continuing audio after dismissal would be surprising and annoying.
+Revisit if: users report wanting audio to survive task removal (unlikely for a sleep app).
+
+D-30: Audio focus — request AUDIOFOCUS_GAIN
+Date: 2026-04-17 | Status: Closed
+Priority: Important
+Decision: Request `AUDIOFOCUS_GAIN` on playback start, release on stop. Standard Android audio focus protocol.
+Rationale: Without audio focus, other apps' audio can overlap with noise playback. Requesting focus is standard behavior for audio apps and ensures clean coexistence with calls, alarms, and other media.
+Revisit if: users want noise to mix with other audio (would use `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK` instead).

@@ -2,8 +2,8 @@
 module: core-playback
 phase: 4
 phase_title: Background Robustness
-step: 0 of 6
-mode: Plan
+step: 0 of 5
+mode: Code
 blocked: null
 regime: Build
 review_done: false
@@ -68,7 +68,7 @@ review_done: false
 ## Phase 4: Background Robustness
 
 **Regime:** Build
-**Scope:** Foreground service, persistent notification, screen-off survival, timer migration to service scope, audio focus.
+**Scope:** Foreground service owns AudioEngine lifecycle, persistent notification with stop action, timer survives backgrounding, audio focus, task-removed cleanup.
 
 **Motivation:** Without a foreground service, `LifecycleEventEffect(ON_STOP)` kills audio on Home press or screen-off. Phase 4 replaces this with a service that owns `AudioEngine` lifecycle, making the app usable as a sleep app.
 
@@ -76,12 +76,11 @@ review_done: false
 
 | Step | Scope | Tests |
 |------|-------|-------|
-| **4.1** | `PlaybackService` skeleton: foreground service + notification channel + `startForeground()`. Engine starts/stops via service intents. No ViewModel wiring yet. | T32, T33 |
-| **4.2** | Service ↔ ViewModel binding: VM binds to service, delegates `start()`/`stop()`/`setColor()`/`setGain()` through binder. Factory updated. | T34 |
-| **4.3** | Timer migration: move countdown coroutine from `viewModelScope` to service scope so timer survives Activity stop. | T35 |
-| **4.4** | Notification actions: Play/Stop buttons on the notification that control the service. | T36 |
-| **4.5** | Permission handling: `POST_NOTIFICATIONS` runtime permission on API 33+. Graceful degradation on deny. | T37 |
-| **4.6** | End-to-end manual verification: screen-off, Home press, task kill, timer expiry while backgrounded, multi-hour run. | M31–M40 |
+| **4.1** | `PlaybackService` skeleton: foreground service + notification channel + `startForeground()` + `FOREGROUND_SERVICE`/`POST_NOTIFICATIONS` permissions + `foregroundServiceType="mediaPlayback"`. Engine starts/stops via service intents. No ViewModel wiring yet. | T32, T33 |
+| **4.2** | Service ↔ ViewModel binding: VM binds to service via `Binder`, delegates `start/stop/setColor/setGain/snapGain`. Remove `LifecycleEventEffect(ON_STOP)` stop behavior. Factory updated. | T34 |
+| **4.3** | Timer migration: move countdown coroutine from `viewModelScope` to service scope. VM observes timer state from service via binding. | T35 |
+| **4.4** | Notification stop action + audio focus + `onTaskRemoved`. Plain notification with stop button. `AudioFocusRequest(AUDIOFOCUS_GAIN)` on start, release on stop. `onTaskRemoved` calls `stopSelf()`. | T36, T37 |
+| **4.5** | End-to-end manual verification: screen-off, Home press, task kill, timer while backgrounded, re-open state sync, multi-hour run. | M31–M40 |
 
 ### Test Spec
 
@@ -102,7 +101,7 @@ review_done: false
 |------|----------|
 | **M31** | Audio continues after pressing Home |
 | **M32** | Audio continues after screen off |
-| **M33** | Notification visible with Play/Stop action |
+| **M33** | Notification visible with stop action |
 | **M34** | Notification Stop triggers fade-out + silence |
 | **M35** | Timer countdown continues after backgrounding |
 | **M36** | Timer expiry while backgrounded triggers fade-out + silence |
@@ -111,23 +110,24 @@ review_done: false
 | **M39** | Color slider changes apply while backgrounded (via notification return) |
 | **M40** | Multi-hour uninterrupted playback (≥2h) without glitches |
 
-### Decisions to Queue
+### Decisions
 
-| ID | Question | Leaning |
-|----|----------|---------|
-| **D-26** | Service binding: bound service with `Binder` vs intent-only communication? | Binder — VM needs synchronous access to `isPlaying`, `setColor()`, `setGain()` |
-| **D-27** | Notification style: `MediaStyle` with `MediaSession` vs plain notification with custom actions? | Plain notification — no media session needed, simpler |
-| **D-28** | Timer ownership: move timer coroutine to service, or keep in VM and relay via binding? | Service — timer must survive Activity destruction |
-| **D-29** | `onTaskRemoved` behavior: stop audio, or keep playing? | Stop — user swiping is explicit dismissal intent |
-| **D-30** | Audio focus: request `AUDIOFOCUS_GAIN` on start, duck/pause on loss? | Yes — standard Android audio app behavior |
+| ID | Question | Status |
+|----|----------|--------|
+| **D-26** | Service binding: `Binder` vs intent-only? | **Closed** — Binder. VM needs synchronous access to `isPlaying`, `setColor()`, `setGain()`. |
+| **D-27** | Notification style: `MediaStyle` vs plain? | **Closed** — Plain notification with stop button. No media session needed; minimal design. |
+| **D-28** | Timer ownership: service vs VM? | **Closed** — Service. Timer must survive Activity destruction. |
+| **D-29** | `onTaskRemoved`: stop or keep playing? | **Closed** — Stop. Swiping from recents = explicit dismissal. |
+| **D-30** | Audio focus handling? | **Closed** — Yes. `AUDIOFOCUS_GAIN` on start, release on stop. Standard audio app behavior. |
 
 ### New Dependencies
 
 | Library | Purpose |
 |---------|---------|
-| *(none expected)* | Foreground service, notification, binding are all Android SDK |
+| *(none)* | Foreground service, notification, binding are all Android SDK |
 
 ### Known Risks
 
-- **Robolectric service testing** — `startForeground()` may need instrumented tests if Robolectric is insufficient. Some T32–T36 tests may become manual verification only.
-- **Emulator denormal stall** — Phase 2 known issue (audio stops after ~10–15 min). Needs hardware testing or longer emulator sessions. If reproducible, add flush-to-zero in render loop.
+- **Robolectric service testing** — `startForeground()` may not work under Robolectric. Strategy: keep service thin (Android glue only), extract orchestration logic into JVM-testable classes, rely on M31–M40 for service lifecycle.
+- **Emulator denormal stall** — Phase 2 known issue (audio stops after ~10–15 min). M40 multi-hour test will confirm.
+- **Android 14+ foreground service type** — requires `android:foregroundServiceType="mediaPlayback"` in manifest.
