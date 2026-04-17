@@ -301,20 +301,28 @@ class PlaybackViewModelTest {
     // ── Phase 3 timer tests ─────────────────────────────────────────
 
     /**
-     * T26 — Timer countdown ticks.
+     * T26 — Timer pre-selected while idle starts on play.
      *
-     * Verifies that onTimerSelected arms the timer and each 1 s tick
-     * decrements remainingMs.
+     * Verifies that onTimerSelected while idle does NOT start the countdown,
+     * but pressing play starts it, and each 1 s tick decrements remainingMs.
      */
     @Test
-    fun timer_countdown_ticks() = runTest(testDispatcher) {
+    fun timer_preselected_starts_on_play() = runTest(testDispatcher) {
         val controller = FakeController()
         val vm = PlaybackViewModel(controller, fadeInMs = 0, fadeOutMs = 0)
 
+        // Select timer while idle — no countdown starts.
         vm.onTimerSelected(60_000)
+        runCurrent()
+        assertSame(TimerState.Off, vm.timerState.value)
+        assertEquals(60_000L, vm.lastTimerDurationMs)
+
+        // Start playback — timer starts.
+        vm.onPlayClicked()
         runCurrent()
         assertEquals(TimerState.Armed(60_000), vm.timerState.value)
 
+        // Verify ticks.
         advanceTimeBy(1000)
         runCurrent()
         assertEquals(TimerState.Armed(59_000), vm.timerState.value)

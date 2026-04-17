@@ -96,14 +96,30 @@ class PlaybackViewModel(
                 _state.value = PlaybackState.Playing
             } catch (_: Throwable) {
                 _state.value = PlaybackState.Idle
+                return
             }
+        }
+
+        // Start timer countdown if one is pre-selected.
+        if (lastTimerDurationMs > 0) {
+            startTimerCountdown(lastTimerDurationMs)
         }
     }
 
     fun onTimerSelected(durationMs: Long) {
         timerJob?.cancel()
+        timerJob = null
         lastTimerDurationMs = durationMs
         prefs?.let { it.timerDurationMs = durationMs }
+        val s = _state.value
+        if (durationMs > 0L && (s == PlaybackState.Playing || s == PlaybackState.FadingIn)) {
+            startTimerCountdown(durationMs)
+        } else {
+            _timerState.value = TimerState.Off
+        }
+    }
+
+    private fun startTimerCountdown(durationMs: Long) {
         _timerState.value = TimerState.Armed(durationMs)
         timerJob = viewModelScope.launch {
             var remaining = durationMs

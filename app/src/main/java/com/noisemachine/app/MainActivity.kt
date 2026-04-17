@@ -4,9 +4,15 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import android.graphics.CornerPathEffect
+import android.graphics.Paint as NativePaint
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -20,7 +26,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -45,6 +50,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
@@ -116,6 +124,9 @@ fun NoiseMachineApp(
                 state = state,
                 color = color,
                 timerState = timerState,
+                initialTimerIndex = timerPresets.indexOfFirst {
+                    it.durationMs == viewModel.lastTimerDurationMs
+                }.coerceAtLeast(0),
                 onPlay = viewModel::onPlayClicked,
                 onStop = viewModel::onStopClicked,
                 onColorChanged = viewModel::onColorChanged,
@@ -131,14 +142,15 @@ private fun MainScreen(
     state: PlaybackState,
     color: Float,
     timerState: TimerState,
+    initialTimerIndex: Int,
     onPlay: () -> Unit,
     onStop: () -> Unit,
     onColorChanged: (Float) -> Unit,
     onTimerSelected: (Long) -> Unit,
     onSettingsClicked: () -> Unit,
 ) {
-    // Timer cycling state
-    var timerIndex by rememberSaveable { mutableIntStateOf(0) }
+    // Timer cycling state — restore from ViewModel's persisted duration.
+    var timerIndex by rememberSaveable { mutableIntStateOf(initialTimerIndex) }
     var showTimerLabel by remember { mutableStateOf(false) }
     var timerLabelKey by remember { mutableIntStateOf(0) }
 
@@ -165,9 +177,7 @@ private fun MainScreen(
             IconButton(onClick = {
                 timerIndex = (timerIndex + 1) % timerPresets.size
                 val preset = timerPresets[timerIndex]
-                if (preset.durationMs > 0) {
-                    onTimerSelected(preset.durationMs)
-                }
+                onTimerSelected(preset.durationMs)
                 // Show label briefly
                 showTimerLabel = true
                 timerLabelKey++
@@ -189,60 +199,76 @@ private fun MainScreen(
             }
         }
 
-        // Center: play/stop button OR timer selection label
-        Box(modifier = Modifier.align(Alignment.Center)) {
-            // Timer selection label (large, centered, fades out)
-            AnimatedVisibility(
-                visible = showTimerLabel,
-                enter = fadeIn(),
-                exit = fadeOut(),
-            ) {
-                Text(
-                    text = timerPresets[timerIndex].label,
-                    color = MutedBlue,
-                    fontSize = 48.sp,
-                    fontWeight = FontWeight.Light,
-                )
-            }
+        // Timer selection label (large, centered, above play button, fades out)
+        AnimatedVisibility(
+            visible = showTimerLabel,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(BiasAlignment(0f, -0.55f)),
+        ) {
+            Text(
+                text = timerPresets[timerIndex].label,
+                color = MutedBlue,
+                fontSize = 48.sp,
+                fontWeight = FontWeight.Light,
+            )
+        }
 
-            // Play/Stop button (hidden while timer label is showing)
-            AnimatedVisibility(
-                visible = !showTimerLabel,
-                enter = fadeIn(),
-                exit = fadeOut(),
-            ) {
-                val isPlaying = state == PlaybackState.Playing ||
-                    state == PlaybackState.FadingIn ||
-                    state == PlaybackState.FadingOut
-
-                if (isPlaying) {
+        // Play/Stop button — 1/3 from top, crossfade matches audio fade duration
+        val showStop = state == PlaybackState.Playing || state == PlaybackState.FadingIn
+        AnimatedContent(
+            targetState = showStop,
+            transitionSpec = {
+                val duration = if (targetState) {
+                    PlaybackViewModel.DEFAULT_FADE_IN_MS.toInt()
+                } else {
+                    PlaybackViewModel.DEFAULT_FADE_OUT_MS.toInt()
+                }
+                fadeIn(tween(duration)) togetherWith fadeOut(tween(duration))
+            },
+            modifier = Modifier.align(BiasAlignment(0f, -0.33f)),
+        ) { isStop ->
+            if (isStop) {
+                Box(
+                    modifier = Modifier
+                        .size(120.dp)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { onStop() },
+                    contentAlignment = Alignment.Center,
+                ) {
                     Box(
                         modifier = Modifier
-                            .size(120.dp)
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                            ) { onStop() },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(64.dp)
-                                .background(MutedBlue, RoundedCornerShape(8.dp)),
-                        )
-                    }
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = "Play",
-                        tint = MutedBlue,
-                        modifier = Modifier
-                            .size(120.dp)
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                            ) { onPlay() },
+                            .size(64.dp)
+                            .background(MutedBlue, RoundedCornerShape(8.dp)),
                     )
+                }
+            } else {
+                // Rounded-corner play triangle
+                Canvas(
+                    modifier = Modifier
+                        .size(120.dp)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { onPlay() },
+                ) {
+                    drawIntoCanvas { canvas ->
+                        val paint = NativePaint().apply {
+                            setColor(MutedBlue.toArgb())
+                            style = NativePaint.Style.FILL
+                            pathEffect = CornerPathEffect(16.dp.toPx())
+                            isAntiAlias = true
+                        }
+                        val path = android.graphics.Path().apply {
+                            moveTo(size.width * 0.22f, size.height * 0.12f)
+                            lineTo(size.width * 0.88f, size.height * 0.50f)
+                            lineTo(size.width * 0.22f, size.height * 0.88f)
+                            close()
+                        }
+                        canvas.nativeCanvas.drawPath(path, paint)
+                    }
                 }
             }
         }
@@ -263,7 +289,7 @@ private fun MainScreen(
                 .padding(horizontal = 32.dp),
         )
 
-        // Timer countdown (subtle, below timer icon when armed)
+        // Timer countdown (subtle, below play button when armed)
         if (timerState is TimerState.Armed && !showTimerLabel) {
             val remaining = timerState.remainingMs
             val minutes = remaining / 60_000
@@ -272,9 +298,7 @@ private fun MainScreen(
                 text = "%d:%02d".format(minutes, seconds),
                 color = MutedBlue.copy(alpha = 0.7f),
                 style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(top = 96.dp, start = 32.dp),
+                modifier = Modifier.align(BiasAlignment(0f, -0.12f)),
             )
         }
     }
@@ -339,6 +363,7 @@ private fun MainScreenIdlePreview() {
             state = PlaybackState.Idle,
             color = 0.2f,
             timerState = TimerState.Off,
+            initialTimerIndex = 0,
             onPlay = {},
             onStop = {},
             onColorChanged = {},
@@ -356,6 +381,7 @@ private fun MainScreenPlayingPreview() {
             state = PlaybackState.Playing,
             color = 0.5f,
             timerState = TimerState.Armed(1_740_000),
+            initialTimerIndex = 2,
             onPlay = {},
             onStop = {},
             onColorChanged = {},
