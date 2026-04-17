@@ -159,3 +159,24 @@ Reviewed all 14 Phase 1 files (8 source, 3 test, 3 build/config) against ARCHITE
 - **Contract changes:** none
 
 Phase 1 delivered the core playback path: NoiseSource → AudioEngine → AudioTrack with Play/Stop Compose UI. 15 unit tests (T1–T7, T6a–h) pass. Manual acceptance M1–M9 verified on Pixel 6 emulator (Android 16.0). 10 decisions closed (D-6–D-15). No architecture drift. No contract changes requiring propagation.
+
+### Phase 2: Color Engine
+
+### Phase Plan: Color Engine
+- **Mode:** Discuss
+- **Outcome:** complete
+- **Contract changes:** none
+
+Broke Phase 2 into 7 steps: 6 Build (ParameterSmoother, Biquad, SpectralShaper, GainSafety, AudioEngine integration, Color slider UI) + 1 Refine (perceptual tuning). Test spec defined: T8–T20. Five decisions queued: D-16 (IIR topology), D-17 (low-end containment), D-18 (smoother algorithm), D-19 (gain compensation), D-20 (Color→coefficient mapping).
+
+### Step 1: ParameterSmoother
+- **Mode:** Code
+- **Outcome:** complete — T8, T8b, T8c, T9, T10, T10b passed (6 tests). Total test count: 21 (15 Phase 1 + 6 ParameterSmoother), 0 failures. `testDebugUnitTest` BUILD SUCCESSFUL.
+- **Contract changes:** none
+
+Implemented `app/src/main/java/com/noisemachine/app/audio/ParameterSmoother.kt` — a lock-free, allocation-free exponential parameter ramp for the audio render thread. UI thread sets target via `setTarget(value)` (`@Volatile` write); audio thread calls `next()` once per sample to get the smoothed value. One-pole exponential smoother: `current += (target - current) * alpha` where `alpha = 1 - exp(-1 / (sampleRate * timeSeconds))`. Supports instant mode (`timeSeconds = 0`) for initial value setup.
+
+Tests in `app/src/test/java/com/noisemachine/app/audio/ParameterSmootherTest.kt` cover convergence (T8: reaches target within 1% after 5 time constants), monotonicity (T8b/c: no overshoot or undershoot on step up/down), allocation freedom (T9: 1M calls with heap-delta < 256 KB), initial value (T10: first `next()` returns constructor value), and instant mode (T10b: `timeSeconds=0` snaps immediately).
+
+One decision closed:
+- **D-18** — ParameterSmoother algorithm: exponential ramp with `@Volatile` target, default 50 ms time constant at 44100 Hz. No locks needed — single volatile read per `next()` call.
