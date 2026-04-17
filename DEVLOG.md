@@ -371,3 +371,18 @@ Added persistence of Color and timer duration across app restarts (D-23):
 
 One decision closed:
 - **D-23** — SharedPreferences over DataStore. Only 2 scalar values, read once at startup, no reactive/Flow requirement. Zero new dependencies.
+
+### Step 5: Settings screen + timer chip UI + dark theme
+- **Mode:** Code
+- **Outcome:** complete — T31 passed (`assembleDebug` BUILD SUCCESSFUL). Total test count: 48 (unchanged), 0 failures.
+- **Contract changes:** none
+
+Full UI redesign to match visual spec — dark navy background, muted blue icon-only interface:
+
+- `MainActivity.kt` — rewrote from scratch. Dark color scheme (`DarkNavy` #0F1A2E, `MutedBlue` #5A7BAF). Layout: timer clock icon (upper left), settings gear (upper right), large play triangle / stop square (center), color slider (1/3 up from bottom, no labels). Timer uses tap-to-cycle interaction: `∞ → 15m → 30m → 1h → 2h → ∞`, selected value appears as large centered text that fades out after 2 seconds. Settings screen with back arrow, shows fade-in/fade-out durations. Navigation via `var showSettings` state toggle (D-24).
+- `res/drawable/ic_timer.xml` — new vector drawable: clock face with hour and minute hands (white fill, tinted at runtime).
+- Fixed deprecation: `Icons.Filled.ArrowBack` → `Icons.AutoMirrored.Filled.ArrowBack`.
+
+Two decisions closed:
+- **D-24** — Settings navigation: simple `var showSettings` state toggle. Two screens, no deep linking needed, avoids NavHost dependency.
+- **D-25** — Fade defaults: 2s fade-in, 5s fade-out. Displayed in Settings screen (read-only for now).

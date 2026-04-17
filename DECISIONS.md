@@ -135,3 +135,17 @@ Priority: Important
 Decision: Persist Color (Float) and timer duration (Long) via `SharedPreferences`, abstracted behind a `PrefsStore` interface for testability. The VM reads once on construction; writes use `apply()` (async fire-and-forget). No new dependencies — SharedPreferences is in the Android SDK. The `Factory` obtains `Application` from `CreationExtras.APPLICATION_KEY` and passes the `PrefsStore` into the VM constructor.
 Rationale: Only 2 scalar values are persisted, read once at startup with no reactive/Flow requirement. DataStore (`androidx.datastore:datastore-preferences`) adds a dependency and coroutine/Flow machinery that is unnecessary for this scale. SharedPreferences `getFloat()`/`getLong()` for 2 keys has negligible main-thread cost (no ANR risk). `apply()` is already async for writes. The `PrefsStore` interface keeps the VM constructor pure and JVM-testable (tests inject a `FakePrefsStore`). Alternatives considered: DataStore — modern and coroutine-native but overkill for 2 scalars with no reactive reads; rejected. Plain constructor defaults (defer persistence) — doesn't satisfy T29/T30 spec; rejected.
 Revisit if: persistence grows beyond a handful of scalars (e.g. preset lists, history) and reactive reads become useful — DataStore or Room become worth the dependency.
+
+D-24: Settings navigation — simple state toggle over NavHost
+Date: 2026-04-17 | Status: Closed
+Priority: Nice-to-have
+Decision: Settings screen is toggled via a simple `var showSettings` boolean state in the top-level Composable, with an `if/else` branch between the main screen and settings screen. No `NavHost` or navigation-compose dependency.
+Rationale: The app has exactly two screens with no deep linking, no back-stack requirements beyond a single pop, and no arguments to pass. A `NavHost` would add a dependency and boilerplate for zero functional gain. A boolean toggle is trivial, readable, and testable.
+Revisit if: a third screen appears or deep-link support is needed — at that point pull in navigation-compose.
+
+D-25: Fade defaults — 2s fade-in, 5s fade-out
+Date: 2026-04-17 | Status: Closed
+Priority: Nice-to-have
+Decision: Default fade-in duration is 2000ms, fade-out duration is 5000ms. Constants live in `PlaybackViewModel.Companion` and are passed via the production Factory. Test VMs use 0ms for deterministic tests.
+Rationale: 2s fade-in is long enough to avoid an abrupt start but short enough to feel responsive. 5s fade-out gives a gentle wind-down suitable for sleep context. These are the values used throughout Phase 3 development. Configurable via Settings screen (read-only display for now).
+Revisit if: user feedback suggests different defaults, or if per-user configurability is added in a future phase.

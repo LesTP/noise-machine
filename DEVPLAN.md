@@ -2,7 +2,7 @@
 module: core-playback
 phase: 3
 phase_title: Productization
-step: 5 of 6
+step: 6 of 6
 mode: Code
 blocked: null
 regime: Build
@@ -47,7 +47,7 @@ review_done: false
 ## Current Status
 
 - **Phase** — 3: Productization
-- **Focus** — Step 3.5: Settings screen + timer chip on main screen + navigation
+- **Focus** — Step 3.6: End-to-end wiring + manual on-device verification (M21–M30)
 - **Blocked/Broken** — None
 
 ## Phase 1: Core Playback — Complete
