@@ -1,6 +1,10 @@
 package com.noisemachine.app
 
+import android.content.ComponentName
+import android.content.Intent
+import android.content.ServiceConnection
 import android.os.Bundle
+import android.os.IBinder
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -47,6 +51,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import com.noisemachine.app.audio.PlaybackController
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
@@ -59,8 +64,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.noisemachine.app.playback.PlaybackState
@@ -94,28 +97,71 @@ private val timerPresets = listOf(
 )
 
 class MainActivity : ComponentActivity() {
+
+    private var playbackService: PlaybackService? = null
+    private var bound = false
+
+    /** Compose-observable state so the UI recomposes once the service is bound. */
+    private val serviceState = mutableStateOf<PlaybackController?>(null)
+
+    private val connection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+            playbackService = (binder as PlaybackService.LocalBinder).getService()
+            serviceState.value = playbackService
+            bound = true
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            playbackService = null
+            serviceState.value = null
+            bound = false
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Put the service in "started" state so startForeground() is legal later.
+        startService(Intent(this, PlaybackService::class.java))
+        bindService(
+            Intent(this, PlaybackService::class.java),
+            connection,
+            BIND_AUTO_CREATE,
+        )
+
         setContent {
-            NoiseMachineApp()
+            val controller by serviceState
+            if (controller != null) {
+                NoiseMachineApp(controller = controller!!)
+            }
         }
+    }
+
+    override fun onDestroy() {
+        if (bound) {
+            unbindService(connection)
+            bound = false
+        }
+        super.onDestroy()
     }
 }
 
 @Composable
 fun NoiseMachineApp(
-    viewModel: PlaybackViewModel = viewModel(factory = PlaybackViewModel.Factory()),
+    controller: PlaybackController,
+    viewModel: PlaybackViewModel = viewModel(
+        factory = PlaybackViewModel.Factory(
+            controller = controller,
+            appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext,
+        ),
+    ),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val color by viewModel.color.collectAsStateWithLifecycle()
     val timerState by viewModel.timerState.collectAsStateWithLifecycle()
 
     var showSettings by rememberSaveable { mutableStateOf(false) }
-
-    LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
-        viewModel.onStopClicked()
-    }
 
     MaterialTheme(colorScheme = NoiseMachineColors) {
         if (showSettings) {

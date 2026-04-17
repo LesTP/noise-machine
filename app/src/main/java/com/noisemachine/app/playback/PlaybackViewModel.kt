@@ -1,11 +1,9 @@
 package com.noisemachine.app.playback
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import androidx.lifecycle.viewmodel.CreationExtras
-import com.noisemachine.app.audio.AudioEngine
-import com.noisemachine.app.audio.AudioTrackSink
 import com.noisemachine.app.audio.PlaybackController
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -176,36 +174,30 @@ class PlaybackViewModel(
         fadeJob = null
         timerJob?.cancel()
         timerJob = null
-        val current = _state.value
-        if (current != PlaybackState.Idle) {
-            try {
-                controller.stop()
-            } catch (_: Throwable) {
-                // Best-effort cleanup.
-            }
-            _state.value = PlaybackState.Idle
-        }
+        // Do NOT call controller.stop() — the service owns engine lifecycle.
+        // The engine must survive ViewModel destruction for background playback.
         super.onCleared()
     }
 
     /**
-     * Default `ViewModelProvider.Factory` that wires the production
-     * [AudioEngine] (with [AudioTrackSink]) into a fresh [PlaybackViewModel].
+     * Factory that wires a [PlaybackController] (bound service) into a
+     * fresh [PlaybackViewModel]. The Activity provides both the controller
+     * (via service binding) and the application context (for prefs).
      */
-    class Factory : ViewModelProvider.Factory {
+    class Factory(
+        private val controller: PlaybackController,
+        private val appContext: Context,
+    ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
+        override fun <T : ViewModel> create(modelClass: Class<T>): T {
             require(modelClass.isAssignableFrom(PlaybackViewModel::class.java)) {
                 "Factory only creates PlaybackViewModel; got $modelClass"
             }
-            val app = extras[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY]
-                ?: error("APPLICATION_KEY not available in CreationExtras")
-            val engine = AudioEngine(sinkFactory = { AudioTrackSink() })
             return PlaybackViewModel(
-                controller = engine,
+                controller = controller,
                 fadeInMs = DEFAULT_FADE_IN_MS,
                 fadeOutMs = DEFAULT_FADE_OUT_MS,
-                prefs = SharedPrefsStore(app),
+                prefs = SharedPrefsStore(appContext),
             ) as T
         }
     }

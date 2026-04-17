@@ -452,3 +452,23 @@ Phase 3 delivered productization features: smooth fade-in/fade-out via gain smoo
 - **Contract changes:** none
 
 Broke Phase 4 into 5 steps: PlaybackService skeleton, service↔ViewModel binding, timer migration to service scope, notification stop action + audio focus + onTaskRemoved, end-to-end verification. Test spec: T32–T37, M31–M40. Five decisions closed (D-26–D-30): Binder binding, plain notification, timer in service, stop on task-removed, audio focus gain.
+
+### Step 1: PlaybackService skeleton
+- **Mode:** Build
+- **Outcome:** complete
+- **Contract changes:** AndroidManifest.xml (permissions + service declaration), build.gradle.kts (Robolectric dep)
+
+Created `PlaybackService` as a foreground service owning the `AudioEngine` lifecycle. Added `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`, and `POST_NOTIFICATIONS` permissions, plus `foregroundServiceType="mediaPlayback"` in the manifest. Service dispatches `ACTION_START`/`ACTION_STOP` intents to create/destroy the engine and manage `startForeground()`/`stopForeground()`. Notification channel (`IMPORTANCE_LOW`) created in `onCreate()`. Engine injection via companion `controllerFactory` for tests. Added Robolectric 4.11.1 + AndroidX Test Core 1.5.0 for service lifecycle testing. T32 (start + notification) and T33 (stop + onDestroy) pass, plus idempotency test.
+
+### Step 2: Service ↔ ViewModel binding
+- **Mode:** Build
+- **Outcome:** complete
+- **Contract changes:** PlaybackController ownership moved from ViewModel to PlaybackService; PlaybackViewModel.Factory signature changed to `(controller, appContext)`; LifecycleEventEffect(ON_STOP) removed from MainActivity
+
+Service now implements `PlaybackController` directly. Added `LocalBinder` inner class; `onBind()` returns binder. `start()` creates engine + `startForeground()` synchronously through the binder, preserving the VM's sequential `snapGain→start→setGain` fade-in pattern. `stop()` tears down engine + `stopForeground()` + `stopSelf()`. Removed `ACTION_START` intent path (binder replaces it); kept `ACTION_STOP` for notification button (Step 4.4).
+
+Activity calls `startService()` in `onCreate()` to put the service in "started" state (so `startForeground()` is legal later), then `bindService()`. Bound service stored in `mutableStateOf` for Compose reactivity — composable renders only after binding completes (~instant same-process).
+
+`PlaybackViewModel.Factory` now accepts `(controller: PlaybackController, appContext: Context)` instead of creating its own `AudioEngine`. `onCleared()` cancels fade/timer jobs but does NOT call `controller.stop()` — the service owns engine lifecycle. This is critical: the engine must survive Activity/VM destruction for background playback. T6f updated to expect 0 stop calls on `onCleared()`.
+
+T34 verifies VM delegates play/stop to the controller. All 25 tests pass (6 service + 19 VM).

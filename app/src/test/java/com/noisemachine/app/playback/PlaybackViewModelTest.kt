@@ -153,17 +153,17 @@ class PlaybackViewModelTest {
         assertEquals("controller.stop must not be called from Idle", 0, controller.stopCalls.get())
     }
 
-    /** T6f — onCleared() stops the controller if Playing. */
+    /** T6f — onCleared() does NOT stop the controller (service owns lifecycle). */
     @Test
-    fun on_cleared_stops_controller_when_playing() {
+    fun on_cleared_does_not_stop_controller_when_playing() {
         val controller = FakeController()
         val vm = PlaybackViewModel(controller)
         vm.onPlayClicked() // → Playing
 
         vm.onCleared()
 
-        assertSame(PlaybackState.Idle, vm.state.value)
-        assertEquals(1, controller.stopCalls.get())
+        // Service owns the engine lifecycle — VM must not stop it.
+        assertEquals(0, controller.stopCalls.get())
     }
 
     /** T6f' — onCleared() while Idle is a no-op (does not call stop). */
@@ -174,8 +174,30 @@ class PlaybackViewModelTest {
 
         vm.onCleared()
 
-        assertSame(PlaybackState.Idle, vm.state.value)
         assertEquals(0, controller.stopCalls.get())
+    }
+
+    // ── Phase 4 delegation test ──────────────────────────────────────
+
+    /**
+     * T34 — ViewModel delegates play/stop to bound service (PlaybackController).
+     *
+     * Verifies that onPlayClicked() calls controller.start() and
+     * onStopClicked() calls controller.stop(), confirming the delegation
+     * pattern works with any PlaybackController (including a bound service).
+     */
+    @Test
+    fun t34_viewmodel_delegates_play_stop_to_controller() {
+        val controller = FakeController()
+        val vm = PlaybackViewModel(controller)
+
+        vm.onPlayClicked()
+        assertEquals("start must be delegated", 1, controller.startCalls.get())
+        assertSame(PlaybackState.Playing, vm.state.value)
+
+        vm.onStopClicked()
+        assertEquals("stop must be delegated", 1, controller.stopCalls.get())
+        assertSame(PlaybackState.Idle, vm.state.value)
     }
 
     /** T6g — VM-layer mirror of T5: 20× rapid toggle keeps state in sync. */
