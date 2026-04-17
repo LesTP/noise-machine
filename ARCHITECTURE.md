@@ -20,10 +20,10 @@
 ### Core Objects
 - **ColorValue** — `Float` in [0.0, 1.0]. 0.0 = bright/airy, 1.0 = deep/soft. Drives a vector of internal coefficients via `EngineParams`.
 - **TextureValue** *(deferred)* — `Float` in [0.0, 1.0]. Smooth ↔ grainy.
-- **TimerState** — `sealed`: `Off | Armed(durationMs, remainingMs) | FadingOut(remainingMs)`.
+- **TimerState** — `sealed`: `Off | Armed(remainingMs)`.
 - **EngineParams** — derived from ColorValue via a mapping function: spectral-tilt amount, HF attenuation, LF containment factor, output-level compensation. Not user-visible.
 - **AudioFrame** — interleaved stereo `ShortArray` buffer sized to the `AudioTrack` write quantum.
-- **PlaybackState** — `sealed`: `Idle | Starting(fadeIn) | Playing | FadingOut(remainingMs) | Stopped`.
+- **PlaybackState** — `sealed`: `Idle | FadingIn | Playing | FadingOut`.
 
 ### Flow
 ```
@@ -65,7 +65,7 @@ The render loop runs on a dedicated high-priority audio thread owned by AudioEng
 |-------|--------|-----------|--------|
 | 1 | Phase 1 — Core playback: NoiseSource + AudioTrack + Play/Stop | Proves the real-time PCM output path before any DSP complexity | Phase 1 complete |
 | 2 | Phase 2 — Color engine: SpectralShaper + ParameterSmoother + GainSafety + tuning | Primary product feature; locks in the audible quality bar | Phase 2 complete |
-| 3 | Phase 3 — Productization: Timer, fade-in/fade-out, Settings skeleton, persistence | Table stakes for a sleep app | In progress |
+| 3 | Phase 3 — Productization: Timer, fade-in/fade-out, Settings skeleton, persistence | Table stakes for a sleep app | Complete |
 | 4 | Phase 4 — Background robustness: Foreground service + notification + screen-off behavior | Required for long unattended sessions | Not started |
 | 5 | Phase 5 — Secondary polish: Texture, restrained stereo decorrelation, optional micro-variation | Deferred enhancements that must not break the calm default feel | Not started |
 

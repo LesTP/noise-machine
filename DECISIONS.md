@@ -129,6 +129,13 @@ Decision: Fade-in/fade-out is implemented as a second `ParameterSmoother` instan
 Rationale: Reuses the proven `ParameterSmoother` class (lock-free, allocation-free, exponential ramp) and follows the exact same pattern as `colorSmoother`. Post-GainSafety placement means no additional clipping stage is needed. Alternatives considered: separate gain stage class \u2014 rejected as unnecessary indirection; inline gain in GainSafety \u2014 rejected because GainSafety is Color-indexed and master gain is orthogonal.
 Revisit if: asymmetric fade-in/fade-out time constants require a smoother with runtime-configurable alpha (Step 3.2 may address this).
 
+D-22: TimerState as separate sealed interface
+Date: 2026-04-17 | Status: Closed
+Priority: Important
+Decision: Timer state is modeled as a separate `TimerState` sealed interface (`Off` / `Armed(remainingMs)`) exposed as its own `StateFlow`, orthogonal to `PlaybackState`.
+Rationale: Merging timer state into `PlaybackState` would create a combinatorial explosion (`Playing+Armed`, `FadingOut+Armed`, etc.) with no benefit. The timer and playback lifecycles are independent — the timer can be armed while idle (waiting for play), and playback can be active without a timer. Separate flows let the UI observe each independently.
+Revisit if: a future feature requires atomic transitions across both states simultaneously.
+
 D-23: Persistence — SharedPreferences over DataStore
 Date: 2026-04-17 | Status: Closed
 Priority: Important

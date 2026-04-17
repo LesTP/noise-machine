@@ -271,7 +271,6 @@ class PlaybackViewModelTest {
     }
 
     /**
-     * T25
      * T25 — fade-out completion: controller.stop() called only after delay.
      *
      * Verifies that stop is not called prematurely at the halfway point,
@@ -296,6 +295,30 @@ class PlaybackViewModelTest {
         runCurrent()
         assertSame(PlaybackState.Idle, vm.state.value)
         assertEquals(1, controller.stopCalls.get())
+    }
+
+    /**
+     * T25b — Play during fade-out (no fade-in) restores gain.
+     *
+     * Verifies that pressing play while fading out with fadeInMs=0
+     * snaps gain back to 1.0 so audio is immediately audible.
+     */
+    @Test
+    fun play_during_fade_out_without_fade_in_restores_gain() = runTest(testDispatcher) {
+        val controller = FakeController()
+        val vm = PlaybackViewModel(controller, fadeInMs = 0, fadeOutMs = 500)
+
+        vm.onPlayClicked()
+        assertSame(PlaybackState.Playing, vm.state.value)
+
+        vm.onStopClicked()
+        assertSame(PlaybackState.FadingOut, vm.state.value)
+        assertEquals(0f, controller.lastGain, 0.001f)
+
+        // Play again before fade-out completes.
+        vm.onPlayClicked()
+        assertSame(PlaybackState.Playing, vm.state.value)
+        assertEquals(1f, controller.lastSnapGain, 0.001f)
     }
 
     // ── Phase 3 timer tests ─────────────────────────────────────────

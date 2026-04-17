@@ -98,6 +98,9 @@ class PlaybackViewModel(
                 _state.value = PlaybackState.Idle
                 return
             }
+            // If resuming from a fade-out, the gain smoother may be targeting 0.
+            // Snap it back to full volume since there's no fade-in to ramp it.
+            controller.snapGain(1f)
         }
 
         // Start timer countdown if one is pre-selected.

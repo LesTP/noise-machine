@@ -1,9 +1,9 @@
 ---
 module: core-playback
-phase: 3
-phase_title: Productization
-step: 6 of 6
-mode: Code
+phase: 4
+phase_title: Background Robustness
+step: 0 of 6
+mode: Plan
 blocked: null
 regime: Build
 review_done: false
@@ -42,12 +42,15 @@ review_done: false
   - **`@Volatile` on local variables.** Kotlin does not allow `@Volatile` on local variables — it's only valid on class properties. Use `AtomicBoolean` for cross-thread test state, or a regular `var` if the test is single-threaded with `Thread.join()`.
   - **IIR denormal stall (unconfirmed).** Audio stopped after ~10–15 min on emulator with HAL I/O errors (`pcm_writei failed: I/O error` from `ranchu` audio service). Initially suspected biquad denormal floats, but logcat shows the failure is in the emulator's virtual audio driver, not our app code. May be emulator-specific. Test on hardware device in Phase 4 before adding denormal protection.
   - **`StandardTestDispatcher` needs `runCurrent()` after `advanceTimeBy()`.** Without it, coroutine continuations that resume at the advanced time are queued but not dispatched, so state changes after `delay()` aren't visible.
+  - **`NativePaint.color` collides with Compose parameter names.** Inside a composable with a `color` parameter, `NativePaint().apply { color = ... }` resolves to the composable's parameter. Use `setColor(value)` instead.
+  - **`ViewModel.onCleared()` is `protected` in the base class.** Removing the explicit `public` makes it inaccessible to tests. Keep `public override` if tests call `onCleared()` directly.
+  - **`rememberSaveable` ignores initial value after first composition.** On config change or process death, `rememberSaveable` restores the saved value, not the parameter. Compute initial values from ViewModel state at composition time.
   <!-- Add more operational knowledge as learned through trial-and-error. -->
 
 ## Current Status
 
-- **Phase** — 3: Productization
-- **Focus** — Step 3.6: End-to-end wiring + manual on-device verification (M21–M30)
+- **Phase** — 3: Productization — Complete (review_done: true)
+- **Focus** — Phase 4: Background Robustness (next)
 - **Blocked/Broken** — None
 
 ## Phase 1: Core Playback — Complete
@@ -58,73 +61,9 @@ review_done: false
 
 7 steps, 23 unit tests (T8–T20 + variants), M10–M20 manual verification passed. 5 decisions closed (D-16–D-20). Known issue: IIR denormal stall after ~10–15 min on emulator (deferred to Phase 4). See DEVLOG.md §Phase 2.
 
-## Phase 3: Productization
+## Phase 3: Productization — Complete
 
-**Regime:** Build
-**Scope:** Timer, fade-in/fade-out, Settings skeleton, persistence.
-
-**Known tension:** Without a foreground service (Phase 4), the timer cannot survive Activity stop (screen-off, Home press). Phase 3 delivers the timer logic; Phase 4 makes it survive backgrounding.
-
-### Steps
-
-| Step | Scope | Tests |
-|------|-------|-------|
-| **3.1** | Master gain smoother in AudioEngine + `PlaybackController.setGain()` + render-loop gain multiply | T21, T22 |
-| **3.2** | PlaybackState expansion (FadingIn/FadingOut) + ViewModel fade-in on play, fade-out on stop | T23, T24, T25 |
-| **3.3** | TimerState + countdown coroutine + timer→fade-out integration | T26, T27, T28 |
-| **3.4** | Persistence via DataStore (Color + timer duration) | T29, T30 |
-| **3.5** | Settings screen (fade duration controls) + timer chip on main screen + navigation | T31 |
-| **3.6** | End-to-end wiring + manual on-device verification | M21–M30 |
-
-### Test Spec
-
-**Unit Tests:**
-
-| Test | Verifies |
-|------|----------|
-| **T21** | Gain application: engine at gain=0.5 produces samples at ~half amplitude vs gain=1.0 (via FakeSink capture) |
-| **T22** | Gain ramp convergence: gain smoother reaches target within 1% after 5τ |
-| **T23** | Fade-in state sequence: `onPlayClicked()` → `FadingIn` → `Playing` (FakeController + TestDispatcher) |
-| **T24** | Fade-out state sequence: `onStopClicked()` while Playing → `FadingOut` → `Idle` |
-| **T25** | Fade-out completion: `controller.stop()` called only after gain reaches near-zero threshold (~0.001) |
-| **T26** | Timer countdown: Armed(60000) ticks to Armed(59000) after 1s (TestDispatcher time advancement) |
-| **T27** | Timer expiry: countdown reaches 0 → triggers fade-out → then `controller.stop()` |
-| **T28** | Timer cancel: pressing stop while Armed cancels countdown coroutine, timer resets to Off |
-| **T29** | Persistence: saved Color value restored on fresh ViewModel construction |
-| **T30** | Persistence: saved timer duration restored on fresh ViewModel construction |
-| **T31** | Settings screen build: `assembleDebug` succeeds with Settings composable wired |
-
-**Manual Tests:**
-
-| Test | Verifies |
-|------|----------|
-| **M21** | Play produces audible fade-in (gradual volume increase from silence) |
-| **M22** | Stop produces audible fade-out (gradual decrease, then silence) |
-| **M23** | Timer chip visible on main screen below Play/Stop |
-| **M24** | Timer selection (15m/30m/1h/2h) arms countdown |
-| **M25** | Timer countdown visible in chip (updating text) |
-| **M26** | Timer expiry produces smooth fade-out then silence |
-| **M27** | Color value persists across app kill + relaunch |
-| **M28** | Timer selection persists across app kill + relaunch |
-| **M29** | Settings screen accessible from main screen, shows fade duration options |
-| **M30** | Settings changes (fade durations) take effect on next play/stop |
-
-### Decisions to Queue
-
-| ID | Question | Leaning |
-|----|----------|---------|
-| **D-21** | Fade mechanism: second `ParameterSmoother` for master gain in AudioEngine, applied post-GainSafety? | Yes — reuses proven smoother; gain ≤ 1.0 preserves clip guarantee |
-| **D-22** | Timer architecture: separate `StateFlow<TimerState>` parallel to `PlaybackState`, or merge into one sealed hierarchy? | Separate — avoids state explosion, timer is orthogonal to play/stop |
-| **D-23** | Persistence: `DataStore<Preferences>` vs `SharedPreferences`? | **Closed** — SharedPreferences; 2 scalars, no reactive reads, zero new deps |
-| **D-24** | Settings navigation: simple `var showSettings` state toggle vs `NavHost`? | State toggle — two screens, no deep linking needed, avoids extra dep |
-| **D-25** | Fade default durations: fade-in 2s, fade-out 5s? | Reasonable defaults; configurable in Settings |
-
-### New Dependencies
-
-| Library | Purpose |
-|---------|---------|
-| *(none needed — SharedPreferences is in the SDK)* | Persist Color + timer values |
-| `org.jetbrains.kotlinx:kotlinx-coroutines-test` | Test timer countdown with TestDispatcher |
+6 steps, 13 unit tests (T21–T30, T25b, T31), M21–M30 manual verification passed. 6 decisions closed (D-21–D-25). See DEVLOG.md §Phase 3.
 
 ## Phase 4: Background Robustness
 

@@ -386,3 +386,60 @@ Full UI redesign to match visual spec — dark navy background, muted blue icon-
 Two decisions closed:
 - **D-24** — Settings navigation: simple `var showSettings` state toggle. Two screens, no deep linking needed, avoids NavHost dependency.
 - **D-25** — Fade defaults: 2s fade-in, 5s fade-out. Displayed in Settings screen (read-only for now).
+
+### Step 6: End-to-end wiring + manual on-device verification
+- **Mode:** Verify
+- **Outcome:** complete — M21–M30 manual verification passed on Pixel 6 emulator. All 17 ViewModel tests pass, 0 failures.
+- **Contract changes:** none
+
+Manual verification results:
+- **M21** — Audible fade-in: gradual volume increase from silence. **Pass.**
+- **M22** — Audible fade-out: gradual decrease, then silence. **Pass.**
+- **M23** — Timer clock icon visible on main screen (upper left). **Pass.**
+- **M24** — Timer selection (15m/30m/1h/2h) arms countdown on play. **Pass.**
+- **M25** — Timer countdown visible below play button (updating text). **Pass.**
+- **M26** — Timer expiry produces smooth fade-out then silence. **Pass.**
+- **M27** — Color value persists across app kill + relaunch. **Pass.**
+- **M28** — Timer selection persists across app kill + relaunch. **Pass** (fixed: timerIndex now restores from persisted lastTimerDurationMs).
+- **M29** — Settings screen accessible from gear icon. **Pass.**
+- **M30** — Settings read-only for now (fade durations displayed). **Pass** (deferred to polish phase).
+
+Follow-up fixes during verification:
+- Timer starts on play, not on selection (user feedback). ViewModel refactored: `onTimerSelected()` stores duration, `onPlayClicked()` starts countdown.
+- Selecting ∞ properly cancels active timer.
+- Play button moved 1/3 from top, timer label shown above play button (not overlapping).
+- Play/stop icon uses `AnimatedContent` crossfade matching audio fade durations (2s in, 5s out).
+- Play triangle drawn with Canvas + `CornerPathEffect(16dp)` for rounded vertices matching stop square's rounded aesthetic.
+- Timer cycling index restored from prefs on relaunch.
+
+### Phase Review
+- **Mode:** Review
+- **Outcome:** complete
+- **Contract changes:** none
+
+Review findings:
+- **Must fix (1):** Play during fade-out with `fadeInMs=0` didn't restore gain to 1.0 — added `controller.snapGain(1f)` in the no-fade path + T25b test.
+- **Should fix (3):** Fully qualified `Column` in SettingsScreen (missing import) — fixed. Duplicate "T25" in test docstring — fixed. D-22 missing from DECISIONS.md — added.
+- **Optional (1):** Redundant `public` on `onCleared()` — kept, required for test access (`protected` in base class).
+
+All fixes applied; 18 tests pass, 0 failures.
+
+### Phase 3 Complete
+
+Phase 3 delivered productization features: smooth fade-in/fade-out via gain smoother, auto-stop countdown timer, SharedPreferences persistence, dark-themed icon-only UI, and a Settings skeleton.
+
+**6 steps completed:**
+1. Master gain smoother in AudioEngine (T21/T22)
+2. PlaybackState expansion + fade orchestration (T23/T24/T25/T25b)
+3. TimerState + countdown coroutine + timer→fade-out (T26/T27/T28)
+4. Persistence via SharedPreferences (T29/T30)
+5. Settings screen + timer cycling UI + dark theme (T31)
+6. End-to-end wiring + manual on-device verification (M21–M30)
+
+**6 decisions closed:** D-21 (fade mechanism), D-22 (timer architecture), D-23 (persistence), D-24 (settings navigation), D-25 (fade defaults).
+
+**Test count:** 18 ViewModel tests (T6/T6a–h, T23–T30, T25b, T31), 6 AudioEngine tests (T4/T5/T21/T22), 6 ParameterSmoother tests, 5 Biquad tests, 5 SpectralShaper tests, 6 GainSafety tests, 1 integration test = 47+ total. Manual tests M21–M30 passed on Pixel 6 emulator.
+
+**Key artifacts:**
+- New: `TimerState.kt`, `PrefsStore.kt`, `SharedPrefsStore.kt`, `ic_timer.xml`
+- Modified: `PlaybackState.kt`, `PlaybackViewModel.kt`, `PlaybackViewModelTest.kt`, `AudioEngine.kt`, `PlaybackController.kt`, `ParameterSmoother.kt`, `MainActivity.kt`
