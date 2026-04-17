@@ -3,8 +3,12 @@ package com.noisemachine.app
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.os.Binder
 import android.os.IBinder
 import com.noisemachine.app.audio.AudioEngine
@@ -33,11 +37,18 @@ import kotlinx.coroutines.launch
  * It also implements [TimerController] so the countdown coroutine runs in
  * [serviceScope] and survives ViewModel/Activity destruction.
  *
+ * Audio focus: requests `AUDIOFOCUS_GAIN` on start, releases on stop.
+ * Focus loss (permanent or transient) stops playback — for a sleep noise
+ * app, an interruption means the user was woken and will restart manually.
+ *
  * Lifecycle:
  * - Activity calls `startService()` to put the service in "started" state,
  *   then `bindService()` to get a [PlaybackController] reference.
- * - [start] creates the engine, calls `startForeground()`, and starts playback.
- * - [stop] stops the engine, removes the notification, and calls `stopSelf()`.
+ * - [start] creates the engine, requests audio focus, calls `startForeground()`,
+ *   and starts playback.
+ * - [stop] stops the engine, abandons audio focus, removes the notification,
+ *   and calls `stopSelf()`.
+ * - [onTaskRemoved] stops playback when the user swipes from recents (D-29).
  * - [onDestroy] is a safety net to stop the engine if still running.
  *
  * The service is `START_NOT_STICKY` — it does not auto-restart after the
@@ -46,10 +57,24 @@ import kotlinx.coroutines.launch
 class PlaybackService : Service(), PlaybackController, TimerController {
 
     private var engine: PlaybackController? = null
+    private var audioManager: AudioManager? = null
+    private var focusRequest: AudioFocusRequest? = null
 
     private val supervisorJob = SupervisorJob()
     private val serviceScope = CoroutineScope(timerDispatcher + supervisorJob)
     private var timerJob: Job? = null
+
+    private val focusListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+        when (focusChange) {
+            AudioManager.AUDIOFOCUS_LOSS,
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> stop()
+        }
+    }
+
+    /** Exposed for test access to simulate focus loss. */
+    internal val audioFocusListener: AudioManager.OnAudioFocusChangeListener
+        get() = focusListener
 
     // -- TimerController ---------------------------------------------------
 
@@ -64,7 +89,7 @@ class PlaybackService : Service(), PlaybackController, TimerController {
         timerJob = serviceScope.launch {
             var remaining = durationMs
             while (remaining > 0) {
-            delay(1000)
+                delay(1000)
                 remaining -= 1000
                 _timerState.value = TimerState.Armed(maxOf(0, remaining))
             }
@@ -94,6 +119,7 @@ class PlaybackService : Service(), PlaybackController, TimerController {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        audioManager = getSystemService(AudioManager::class.java)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -103,9 +129,15 @@ class PlaybackService : Service(), PlaybackController, TimerController {
         return START_NOT_STICKY
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        stop()
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onDestroy() {
         cancelTimer()
         supervisorJob.cancel()
+        abandonFocus()
         engine?.stop()
         engine = null
         super.onDestroy()
@@ -118,6 +150,7 @@ class PlaybackService : Service(), PlaybackController, TimerController {
 
     override fun start() {
         if (engine?.isPlaying == true) return
+        if (!requestFocus()) return
         val newEngine = controllerFactory()
         engine = newEngine
         startForeground(NOTIFICATION_ID, buildNotification())
@@ -129,6 +162,7 @@ class PlaybackService : Service(), PlaybackController, TimerController {
         val e = engine ?: return
         e.stop()
         engine = null
+        abandonFocus()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -143,6 +177,28 @@ class PlaybackService : Service(), PlaybackController, TimerController {
 
     override fun snapGain(gain: Float) {
         engine?.snapGain(gain)
+    }
+
+    // -- Audio focus -------------------------------------------------------
+
+    private fun requestFocus(): Boolean {
+        val am = audioManager ?: return true // no AudioManager = test environment
+        val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .build()
+            )
+            .setOnAudioFocusChangeListener(focusListener)
+            .build()
+        focusRequest = request
+        return am.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+    }
+
+    private fun abandonFocus() {
+        focusRequest?.let { audioManager?.abandonAudioFocusRequest(it) }
+        focusRequest = null
     }
 
     // -- Notification -----------------------------------------------------
@@ -160,11 +216,27 @@ class PlaybackService : Service(), PlaybackController, TimerController {
     }
 
     private fun buildNotification(): Notification {
+        val stopIntent = Intent(this, PlaybackService::class.java).apply {
+            action = ACTION_STOP
+        }
+        val stopPendingIntent = PendingIntent.getService(
+            this,
+            0,
+            stopIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val stopAction = Notification.Action.Builder(
+            null,
+            "Stop",
+            stopPendingIntent,
+        ).build()
+
         return Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_silent_mode_off)
             .setContentTitle("Noise Machine")
             .setContentText("Playing")
             .setOngoing(true)
+            .addAction(stopAction)
             .build()
     }
 

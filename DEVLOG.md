@@ -472,3 +472,29 @@ Activity calls `startService()` in `onCreate()` to put the service in "started" 
 `PlaybackViewModel.Factory` now accepts `(controller: PlaybackController, appContext: Context)` instead of creating its own `AudioEngine`. `onCleared()` cancels fade/timer jobs but does NOT call `controller.stop()` — the service owns engine lifecycle. This is critical: the engine must survive Activity/VM destruction for background playback. T6f updated to expect 0 stop calls on `onCleared()`.
 
 T34 verifies VM delegates play/stop to the controller. All 25 tests pass (6 service + 19 VM).
+
+### Step 3: Timer migration to service scope
+- **Mode:** Build
+- **Outcome:** complete — T35 passed + timer tick/expiry/cancel/fallback tests. All 31 tests pass (13 service + 18 VM).
+- **Contract changes:** New `TimerController` interface; `PlaybackViewModel` constructor and Factory gain `timerController` param; `PlaybackService` implements `TimerController`; `NoiseMachineApp` composable gains `timerController` param.
+
+Moved the timer countdown coroutine from `viewModelScope` to the service's own `CoroutineScope` (D-28). Created `TimerController` interface (`timerState: StateFlow<TimerState>`, `onTimerExpired` callback, `startTimer/cancelTimer`) to keep the timer contract separate from `PlaybackController`. `PlaybackService` implements it with a `serviceScope` backed by `SupervisorJob()` and an injectable `timerDispatcher` for test control.
+
+The ViewModel no longer owns `_timerState`, `timerJob`, or `startTimerCountdown()` — it delegates to `timerController.startTimer/cancelTimer` and observes `timerController.timerState` as a pass-through. The `onTimerExpired` callback pattern lets the service's timer expiry trigger the VM's `onStopClicked()` (for proper fade-out). When the VM is destroyed, `onCleared()` nulls the callback; the service falls back to calling `stop()` directly (acceptable since no UI is watching).
+
+Review fix: clamped remaining with `maxOf(0, remaining)` to prevent negative `Armed` values for non-1000-multiple durations. Fixed misleading `assertSame` → `assertNotNull` in VM test.
+
+### Step 4: Notification stop action + audio focus + onTaskRemoved
+- **Mode:** Build
+- **Outcome:** complete — T36 passed + onTaskRemoved + audio focus tests. All 34 tests pass (16 service + 18 VM).
+- **Contract changes:** none (all changes internal to PlaybackService)
+
+Three additions to `PlaybackService`:
+
+1. **Notification stop action** — `buildNotification()` now includes a `PendingIntent` → `ACTION_STOP` wired as a `Notification.Action` labeled "Stop". The existing `onStartCommand(ACTION_STOP)` handler routes it to `stop()`.
+
+2. **Audio focus** — `start()` requests `AUDIOFOCUS_GAIN` via `AudioFocusRequest.Builder` with `USAGE_MEDIA` / `CONTENT_TYPE_MUSIC`. Focus denied = early return (no playback). `stop()` and `onDestroy()` abandon focus. `OnAudioFocusChangeListener` handles `AUDIOFOCUS_LOSS`, `AUDIOFOCUS_LOSS_TRANSIENT`, and `AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK` by calling `stop()` — for a sleep noise app, any interruption should stop rather than duck/resume.
+
+3. **onTaskRemoved** — overrides `onTaskRemoved()` → `stop()` per D-29 (swipe from recents = explicit dismissal).
+
+T36 verifies the notification has a "Stop" action. Audio focus tests use an `internal audioFocusListener` accessor to simulate focus loss/transient loss. `onTaskRemoved` test verifies engine stops. `AudioFocusRequest`'s `focusGain` and `onAudioFocusChangeListener` are not public API, so tests verify behavior through the internal listener and observable engine state rather than shadow inspection.

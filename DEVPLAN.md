@@ -2,7 +2,7 @@
 module: core-playback
 phase: 4
 phase_title: Background Robustness
-step: 3 of 5
+step: 4 of 5
 mode: Code
 blocked: null
 regime: Build

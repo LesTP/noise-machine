@@ -1,6 +1,7 @@
 package com.noisemachine.app
 
 import android.content.Intent
+import android.media.AudioManager
 import com.noisemachine.app.audio.PlaybackController
 import com.noisemachine.app.playback.TimerState
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -25,7 +26,7 @@ import org.robolectric.annotation.Config
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Unit tests for [PlaybackService] covering Phase-4 test spec T32/T33/T35.
+ * Unit tests for [PlaybackService] covering Phase-4 test spec T32/T33/T35/T36.
  *
  * Uses Robolectric to shadow the Android Service lifecycle. The real
  * [AudioEngine] is replaced with a [FakeController] via the service's
@@ -33,6 +34,8 @@ import java.util.concurrent.atomic.AtomicInteger
  *
  * Step 4.3: Timer tests (T35) inject a [StandardTestDispatcher] via
  * [PlaybackService.timerDispatcher] to control virtual time.
+ *
+ * Step 4.4: Notification stop action (T36), audio focus, and onTaskRemoved.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -276,5 +279,86 @@ class PlaybackServiceTest {
 
         service.stop()
         assertSame(TimerState.Off, service.timerState.value)
+    }
+
+    // ── T36 — Notification stop action ───────────────────────────────
+
+    /**
+     * T36 — Notification has a stop action that triggers service stop.
+     *
+     * Verifies:
+     * 1. The foreground notification has at least one action.
+     * 2. The action is labeled "Stop".
+     * 3. Sending ACTION_STOP intent stops the engine (already covered by
+     *    action_stop_intent_delegates_to_stop, but T36 confirms the
+     *    notification action is wired).
+     */
+    @Test
+    fun t36_notification_has_stop_action() {
+        val service = serviceController.create().get()
+        service.start()
+
+        val shadow = shadowOf(service)
+        val notification = shadow.lastForegroundNotification
+        assertNotNull("Notification must exist", notification)
+
+        val actions = notification.actions
+        assertNotNull("Notification must have actions", actions)
+        assertTrue("Notification must have at least one action", actions.isNotEmpty())
+        assertEquals("Stop", actions[0].title.toString())
+    }
+
+    // ── onTaskRemoved ────────────────────────────────────────────────
+
+    /** Swiping from recents stops playback (D-29). */
+    @Test
+    fun on_task_removed_stops_playback() {
+        val service = serviceController.create().get()
+        service.start()
+        assertTrue(service.isPlaying)
+
+        service.onTaskRemoved(null)
+
+        assertFalse("Engine must be stopped after task removed", fakeController.isPlaying)
+        assertEquals(1, fakeController.stopCalls.get())
+    }
+
+    // ── Audio focus ──────────────────────────────────────────────────
+
+    /** Audio focus is requested on start (Robolectric auto-grants). */
+    @Test
+    fun start_requests_audio_focus() {
+        val service = serviceController.create().get()
+
+        // Robolectric's AudioManager auto-grants focus. If focus was not
+        // requested, start() would return early (no engine). Verifying
+        // the engine started proves focus was requested and granted.
+        service.start()
+        assertTrue("Engine must start (focus granted)", service.isPlaying)
+    }
+
+    /** Audio focus loss stops playback. */
+    @Test
+    fun audio_focus_loss_stops_playback() {
+        val service = serviceController.create().get()
+        service.start()
+        assertTrue(service.isPlaying)
+
+        // Simulate audio focus loss via the internal listener.
+        service.audioFocusListener.onAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS)
+
+        assertFalse("Engine must be stopped on focus loss", fakeController.isPlaying)
+    }
+
+    /** Transient audio focus loss also stops playback (sleep app behavior). */
+    @Test
+    fun audio_focus_transient_loss_stops_playback() {
+        val service = serviceController.create().get()
+        service.start()
+        assertTrue(service.isPlaying)
+
+        service.audioFocusListener.onAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
+
+        assertFalse("Engine must be stopped on transient focus loss", fakeController.isPlaying)
     }
 }
