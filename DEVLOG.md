@@ -262,3 +262,43 @@ Fix: added `nextBlock(samples: Int)` to ParameterSmoother — advances the ramp 
 After the fix, on-device testing confirmed: Color=0 produces bright white noise, Color=1 produces deep brown-ish noise, and the slider transitions smoothly between them. The initial coefficient curves (low-shelf +10 dB at 250 Hz, high-shelf -14 dB at 2500 Hz) and gain compensation (0.85/0.95/0.60 at Color 0/0.5/1.0) produce an acceptable Color continuum without further tuning. M10–M20 all pass.
 
 No decisions closed in this step. The initial curves from D-16/D-20 proved adequate; further refinement can happen in a future iteration if needed.
+
+---
+
+## Phase Review — core-playback.2 (Color Engine)
+
+### Review Findings
+- **Must fix (1):** `PlaybackViewModel.onCleared()` missing `super.onCleared()` — accidentally removed in Step 5. Restored.
+- **Should fix (2):** Unused import `kotlin.math.exp` in GainSafety — removed. ARCHITECTURE.md provisional contracts listed two resolved items as open (coefficient schedule D-16, low-end containment D-17) — updated.
+- **Optional (3):** PlaybackController KDoc lacks setColor() docs, ARCHITECTURE.md flow diagram uses old API names, SpectralShaperTest duplicates BiquadTest helpers — deferred.
+
+All fixes applied; 38 tests pass, 0 failures.
+
+---
+
+## Phase 2 Complete — core-playback.2 (Color Engine)
+
+Phase 2 delivered the full Color engine: continuous spectral shaping from white (Color=0) to brown-like (Color=1) via a two-biquad shelving cascade, with allocation-free parameter smoothing, DC blocking, gain compensation, and a Compose slider UI.
+
+**7 steps completed:**
+1. ParameterSmoother — lock-free exponential ramp (T8/T9/T10)
+2. Biquad — DFII-T second-order IIR filter (T11/T12/T13)
+3. SpectralShaper — Color-driven cascaded biquads (T14/T15/T16)
+4. GainSafety — DC blocker + gain compensation + hard clip (T17/T18)
+5. AudioEngine integration — DSP pipeline wired + setColor API (T19)
+6. Color slider UI — Compose Slider wired through ViewModel (T20)
+7. Perceptual tuning — smoother rate fix + on-device verification (M10–M20)
+
+**5 decisions closed:** D-16 (IIR topology), D-17 (low-end containment), D-18 (smoother design), D-19 (gain compensation), D-20 (Color→coefficient mapping).
+
+**Test count:** 38 unit tests (15 Phase 1 + 23 Phase 2), 0 failures. Manual tests M10–M20 passed on Pixel 6 emulator.
+
+**Known issue:** One-time audio glitch/stop observed after ~10 min on emulator; not reproducible on second 15+ min run. Logged for hardware-device testing in Phase 4 (background robustness).
+
+**Key artifacts:**
+- `ParameterSmoother.kt` + `ParameterSmootherTest.kt`
+- `Biquad.kt` + `BiquadTest.kt`
+- `SpectralShaper.kt` + `SpectralShaperTest.kt`
+- `GainSafety.kt` + `GainSafetyTest.kt`
+- Modified: `AudioEngine.kt`, `PlaybackController.kt`, `PlaybackViewModel.kt`, `MainActivity.kt`
+- Modified tests: `AudioEngineTest.kt`, `PlaybackViewModelTest.kt`

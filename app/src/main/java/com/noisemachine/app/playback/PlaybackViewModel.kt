@@ -73,6 +73,7 @@ class PlaybackViewModel(
             }
             _state.value = PlaybackState.Idle
         }
+        super.onCleared()
     }
 
     /**

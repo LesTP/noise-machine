@@ -1,7 +1,6 @@
 package com.noisemachine.app.audio
 
 import kotlin.math.PI
-import kotlin.math.exp
 
 /**
  * Output safety stage: DC blocker + gain compensation + hard clip.

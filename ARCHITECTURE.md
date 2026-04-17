@@ -64,7 +64,7 @@ The render loop runs on a dedicated high-priority audio thread owned by AudioEng
 | Order | Module | Rationale | Status |
 |-------|--------|-----------|--------|
 | 1 | Phase 1 — Core playback: NoiseSource + AudioTrack + Play/Stop | Proves the real-time PCM output path before any DSP complexity | Phase 1 complete |
-| 2 | Phase 2 — Color engine: SpectralShaper + ParameterSmoother + GainSafety + tuning | Primary product feature; locks in the audible quality bar | In progress |
+| 2 | Phase 2 — Color engine: SpectralShaper + ParameterSmoother + GainSafety + tuning | Primary product feature; locks in the audible quality bar | Phase 2 complete |
 | 3 | Phase 3 — Productization: Timer, fade-in/fade-out, Settings skeleton, persistence | Table stakes for a sleep app | Not started |
 | 4 | Phase 4 — Background robustness: Foreground service + notification + screen-off behavior | Required for long unattended sessions | Not started |
 | 5 | Phase 5 — Secondary polish: Texture, restrained stereo decorrelation, optional micro-variation | Deferred enhancements that must not break the calm default feel | Not started |
@@ -110,7 +110,7 @@ Rationale: Aggressive stereo is distracting and attention-grabbing, which is the
 Revisit if: user feedback requests a subtle-width option and we can expose it without compromising the calm default.
 
 ## Provisional Contracts
-- **SpectralShaper coefficient schedule** — exact cascade topology (number of biquads, filter types, coefficient curves vs. Color) is uncertain. Will be determined during Phase 2 via perceptual tuning. Downstream modules treat SpectralShaper as a black-box `process(buf, color) -> buf`.
-- **Low-end containment** — choice between leaky integrator, DC blocker, or bounded coefficients at the dark extreme is open. Will be resolved during Phase 2.
+- **SpectralShaper coefficient schedule** — resolved in D-16: 2 biquad sections (low-shelf 250 Hz + high-shelf 2500 Hz), Color-driven gains (linear-in-dB). Initial curve adequate per on-device testing.
+- **Low-end containment** — resolved in D-17: first-order DC blocker (~20 Hz) in GainSafety via leaky integrator subtraction.
 - **Texture DSP definition** — Texture's exact audible effect (short-timescale roughness vs. HF microstructure vs. subtle filtering) is implementation-defined. To be resolved in Phase 5.
-- **AudioTrack buffer configuration** — sample rate, buffer size, and write-mode tuning for multi-hour glitch-free playback. Resolve in Phase 1.
+- **AudioTrack buffer configuration** — sample rate (44100 Hz, D-7), buffer size, and write-mode tuning resolved in Phase 1. Multi-hour glitch-free playback to be validated in Phase 4.

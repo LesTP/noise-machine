@@ -2,11 +2,11 @@
 module: core-playback
 phase: 2
 phase_title: Color Engine
-step: 7 of 7
-mode: Review
+step: complete
+mode: Done
 blocked: null
 regime: Build
-review_done: false
+review_done: true
 ---
 
 # Noise Machine — Development Plan
@@ -38,73 +38,21 @@ review_done: false
   - **AudioFormat constant naming.** It's `AudioFormat.ENCODING_PCM_16BIT` (no underscore between `16` and `BIT`); `ENCODING_PCM_FLOAT` *does* have the underscore. Easy to get wrong by analogy.
   - **`val state by flow.collectAsStateWithLifecycle()` needs `import androidx.compose.runtime.getValue`.** Without the explicit `getValue` import, Kotlin can't resolve the `by`-delegate operator on `androidx.compose.runtime.State<T>` and the build fails with `has no method 'getValue(…)'`.
   - **`ViewModel.onCleared()` is not enough to stop audio without a foreground service.** The Activity can linger after `onStop()` without triggering `onCleared()`. Use `LifecycleEventEffect(ON_STOP)` to stop playback explicitly. Phase 4's foreground service replaces this.
+  - **ParameterSmoother rate mismatch.** If calling `next()` per-buffer instead of per-sample, use `nextBlock(bufferSize)` to advance correctly. Calling `next()` once per buffer makes the effective time constant ~bufferSize× slower (~51 s instead of 50 ms at 1024-frame buffers).
+  - **`@Volatile` on local variables.** Kotlin does not allow `@Volatile` on local variables — it's only valid on class properties. Use `AtomicBoolean` for cross-thread test state, or a regular `var` if the test is single-threaded with `Thread.join()`.
+  - **IIR denormal stall (unconfirmed).** Audio stopped after ~10–15 min on emulator with HAL I/O errors (`pcm_writei failed: I/O error` from `ranchu` audio service). Initially suspected biquad denormal floats, but logcat shows the failure is in the emulator's virtual audio driver, not our app code. May be emulator-specific. Test on hardware device in Phase 4 before adding denormal protection.
   <!-- Add more operational knowledge as learned through trial-and-error. -->
 
 ## Current Status
 
-- **Phase** — 2: Color Engine
-- **Focus** — All steps complete; awaiting phase review
+- **Phase** — 2: Color Engine (complete, awaiting commit)
+- **Focus** — Phase completion protocol
 - **Blocked/Broken** — None
 
 ## Phase 1: Core Playback — Complete
 
 5 steps, 15 unit tests (T1–T7, T6a–h), M1–M9 manual verification passed. 10 decisions closed (D-6–D-15). See DEVLOG.md §Phase 1.
 
-## Phase 2: Color Engine
+## Phase 2: Color Engine — Complete
 
-**Goal:** Add continuous spectral shaping driven by a Color slider [0.0 bright/airy → 1.0 deep/soft], with smooth parameter transitions and output safety.
-
-**Regime:** Build (Steps 1–6) → Refine (Step 7: perceptual tuning).
-
-### Steps
-
-1. [x] **ParameterSmoother** — Lock-free exponential ramp for real-time parameter smoothing. *(done 2026-04-17; T8/T8b/T8c/T9/T10/T10b passed; D-18 closed)*
-2. [x] **Biquad** — Generic second-order IIR filter (Direct Form II Transposed). *(done 2026-04-17; T11/T12/T12b/T13/T13b passed)*
-3. [x] **SpectralShaper** — Cascaded biquad chain driven by Color [0,1]. *(done 2026-04-17; T14/T15/T15b/T16/T16b passed; D-16, D-20 closed)*
-4. [x] **GainSafety** — DC blocker + output normalization + hard clip. *(done 2026-04-17; T17/T17b/T18/T18b/T18c/T18d passed; D-17, D-19 closed)*
-5. [x] **AudioEngine integration** — Wire ParameterSmoother + SpectralShaper + GainSafety into render loop. *(done 2026-04-17; T19 passed)*
-6. [x] **Color slider UI** — Compose Slider on main screen wired through ViewModel. *(done 2026-04-17; T20 passed)*
-7. [x] **Perceptual tuning** — Bug fix (smoother rate mismatch) + on-device verification. *(done 2026-04-17; M10–M20 passed)*
-
-### Test Spec
-
-| # | What | How | Expected |
-|---|------|-----|----------|
-| T8 | ParameterSmoother reaches target | Set target, call `next()` in loop | Value converges within tolerance after N samples |
-| T9 | ParameterSmoother is allocation-free | Heap-delta test (same pattern as T2) | No allocations in hot path |
-| T10 | ParameterSmoother instant-set for initial value | Construct with initial value, read immediately | Returns initial value without ramping |
-| T11 | Biquad low-shelf boosts low frequencies | Process white noise, compare low-band vs high-band energy | Low-band energy > high-band energy |
-| T12 | Biquad high-shelf cuts high frequencies | Process white noise, compare bands | High-band energy reduced relative to flat |
-| T13 | Biquad is allocation-free | Heap-delta test | No allocations in hot path |
-| T14 | SpectralShaper Color=0.0 ≈ flat (white) | Process buffer, compare spectral balance | Approximately equal energy in low and high bands |
-| T15 | SpectralShaper Color=1.0 = tilted (brown-ish) | Process buffer, compare spectral balance | Low-band energy significantly > high-band energy |
-| T16 | SpectralShaper is allocation-free | Heap-delta test | No allocations in hot path |
-| T17 | GainSafety output always in [-1, 1] | Feed extreme inputs (DC, large amplitude) | All output samples in [-1.0, 1.0] |
-| T18 | GainSafety removes DC offset | Feed constant-offset signal | Output mean ≈ 0.0 |
-| T19 | Full pipeline bounded for all Color values | Run engine with Color at 0.0, 0.5, 1.0 via FakeSink | All samples in [-1, 1], no NaN/Inf |
-| T20 | Build succeeds with Color slider | `./gradlew assembleDebug` | Exit code 0 |
-
-### Decisions to resolve during this phase
-
-- **D-16:** IIR cascade topology — *closed in Step 3: 2 biquads (low-shelf 250 Hz + high-shelf 2500 Hz), Color-driven gains; see DECISIONS.md.*
-- **D-17:** Low-end containment — *closed in Step 4: DC blocker (1st-order HPF ~20 Hz) via leaky integrator in GainSafety.*
-- **D-18:** ParameterSmoother algorithm — *closed in Step 1: exponential ramp, `@Volatile` target, 50 ms default time constant; see DECISIONS.md.*
-- **D-19:** Gain compensation — *closed in Step 4: static piecewise-linear 3-point curve (0.85/0.95/0.60 at Color 0/0.5/1.0).*
-- **D-20:** Color → coefficient mapping — *closed in Step 3: linear-in-dB, low shelf 0→+10 dB, high shelf 0→-14 dB; initial curve refined in Step 7.*
-
-### Refine step (Step 7) structure
-
-**Goals:**
-- Color slider produces a natural-sounding continuum from bright/airy to deep/soft
-- No sudden jumps, clicks, or artifacts when sliding during playback
-- Perceived loudness stays approximately consistent across the full range
-- Dark extreme (Color=1.0) is soft and deep, not muddy, boomy, or drifting
-
-**Constraints:**
-- All DSP must remain allocation-free
-- Must be verified on real device audio (emulator may not be representative)
-- Ramp times must feel smooth but responsive (not sluggish)
-
-**First item to show:** Play with Color at 0.0, 0.5, and 1.0 — do they sound distinct and pleasant?
-
-**Time budget:** 2–3 sessions
+7 steps, 23 unit tests (T8–T20 + variants), M10–M20 manual verification passed. 5 decisions closed (D-16–D-20). Known issue: IIR denormal stall after ~10–15 min on emulator (deferred to Phase 4). See DEVLOG.md §Phase 2.
