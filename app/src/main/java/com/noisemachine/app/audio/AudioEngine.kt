@@ -40,7 +40,7 @@ class AudioEngine(
     private val sinkFactory: () -> AudioSink,
     private val noiseFactory: () -> NoiseSource = { NoiseSource() },
     private val sampleRateHz: Int = 44_100,
-) {
+) : PlaybackController {
 
     private val lock = ReentrantLock()
 
@@ -49,7 +49,7 @@ class AudioEngine(
 
     private var renderThread: Thread? = null
 
-    val isPlaying: Boolean
+    override val isPlaying: Boolean
         get() = running
 
     /**
@@ -57,7 +57,7 @@ class AudioEngine(
      * thread has been launched (the first audio buffer may not yet have been
      * delivered to the sink).
      */
-    fun start() = lock.withLock {
+    override fun start() = lock.withLock {
         if (running) return@withLock
 
         val sink = sinkFactory()
@@ -76,7 +76,7 @@ class AudioEngine(
      * Stop playback. No-op if already stopped. Blocks until the render thread
      * has drained out and the sink has been closed.
      */
-    fun stop() = lock.withLock {
+    override fun stop() = lock.withLock {
         if (!running) return@withLock
 
         running = false

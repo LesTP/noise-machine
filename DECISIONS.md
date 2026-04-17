@@ -93,3 +93,31 @@ Priority: Important
 Decision: `AudioEngine` depends on a tiny `AudioSink` interface (`open / write / close`); production code uses `AudioTrackSink`, tests inject a `FakeSink`. JVM unit tests for the engine's lifecycle, threading, and no-leak guarantees run with no Android framework dependency and no `androidTest` step.
 Rationale: Phase 1 test spec T4 (start/stop lifecycle) and T5 (rapid toggle, no crash/ANR) are about the engine's own state machine and thread management, not about Android's audio HAL. Routing them through Robolectric or `androidTest` would add seconds to minutes per run and gate iteration on emulator availability — disproportionate for what we're actually testing. The seam also matches the layered render pipeline already documented in ARCHITECTURE.md (NoiseSource → … → sink) and aligns with the CLAUDE.md test strategy note ("specific framework chosen during Phase 1"). Alternatives considered: Robolectric — partial AudioTrack shadow, brittle, large dep; rejected. Pure `androidTest` — most realistic but requires emulator/device for every iteration; rejected. AudioTrack-direct in `AudioEngine` with no seam — simpler code, but un-unit-testable; rejected.
 Revisit if: a future feature requires us to assert behavior tightly bound to AudioTrack semantics (e.g. precise underrun handling), at which point a small targeted instrumented test under `app/src/androidTest/` is the right addition — the seam doesn't prevent it.
+
+D-12: PlaybackViewModel state surface — `StateFlow<PlaybackState>`
+Date: 2026-04-17 | Status: Closed
+Priority: Important
+Decision: `PlaybackViewModel` exposes its UI state as `StateFlow<PlaybackState>` backed by a private `MutableStateFlow`. Compose collects via `androidx.lifecycle.compose.collectAsStateWithLifecycle()`, which respects the activity lifecycle (no collection while stopped) and re-collects on configuration changes.
+Rationale: `StateFlow` is the idiomatic VM-to-UI surface for Kotlin/Compose, plays well with `viewModelScope` if we later need async state, and \u2014 critically for our one-test-runtime constraint \u2014 is testable in plain JVM JUnit by reading `state.value` synchronously. Updates from `onPlayClicked()` / `onStopClicked()` happen on whatever thread fires the event handler; `MutableStateFlow.value` is thread-safe so no further synchronization is required at this stage. Alternative considered: Compose `mutableStateOf<PlaybackState>` \u2014 simpler, but couples the VM to the Compose runtime and reads less idiomatically from non-Compose tests; rejected.
+Revisit if: we ever need a one-shot event channel (errors, navigation) that doesn't fit a `StateFlow` \u2014 then we add a separate `SharedFlow` next to the state flow.
+
+D-13: PlaybackController seam \u2014 narrow interface in front of AudioEngine
+Date: 2026-04-17 | Status: Closed
+Priority: Important
+Decision: `PlaybackViewModel` depends on a tiny `PlaybackController` interface (`val isPlaying: Boolean; fun start(); fun stop()`). `AudioEngine` implements it directly \u2014 its existing signatures already match \u2014 so no adapter class is needed. Tests inject a `FakeController` that records call counts and supports a one-shot `failNextStart` flag for T6h.
+Rationale: Same separation-of-concerns rationale as D-11 (AudioSink), one layer up. Lets the VM's state-machine and idempotency contracts (T6, T6a..T6h) be validated entirely on the JVM with no audio framework anywhere on the test classpath. Implementing the interface on `AudioEngine` directly (vs. wrapping it in a `PlaybackController` adapter) avoids dead code: `AudioEngine.start/stop/isPlaying` already had the right signatures, the only change was adding `: PlaybackController` and `override` modifiers.
+Revisit if: a second production controller appears (e.g. a Foreground-Service-mediated controller in Phase 4) and the interface needs to grow \u2014 expected but not yet pressing.
+
+D-14: Step 4 dependencies \u2014 lifecycle-viewmodel-compose + lifecycle-runtime-compose
+Date: 2026-04-17 | Status: Closed
+Priority: Nice-to-have
+Decision: Add `androidx.lifecycle:lifecycle-viewmodel-compose` and `androidx.lifecycle:lifecycle-runtime-compose`, both pinned to 2.8.7 via the existing `lifecycleRuntimeKtx` version ref in `gradle/libs.versions.toml`. No new test dependencies; `kotlinx-coroutines-core` (needed for `MutableStateFlow`) comes in transitively through Compose runtime.
+Rationale: `lifecycle-viewmodel-compose` provides the `viewModel(factory = \u2026)` Composable function used by `MainActivity.NoiseMachineApp`; `lifecycle-runtime-compose` provides `collectAsStateWithLifecycle()`, the lifecycle-aware variant of `collectAsState()` and the recommended default since 2.7.x. Both are small, both share the version we already pin, and adding them now avoids wedging in an extra version family later. Alternative considered: pull only `lifecycle-viewmodel-compose` and use `collectAsState()` instead \u2014 functional but produces background collection while the activity is stopped, defeating part of the lifecycle story; rejected.
+Revisit if: a future Lifecycle/Compose release breaks one of these artifacts and we need to split versions.
+
+D-15: PlaybackViewModel construction \u2014 inline Factory wires the production AudioEngine
+Date: 2026-04-17 | Status: Closed
+Priority: Important
+Decision: `PlaybackViewModel.Factory` (a nested `ViewModelProvider.Factory`) constructs `AudioEngine(sinkFactory = { AudioTrackSink() })` and passes it to a fresh `PlaybackViewModel`. The activity calls `viewModel(factory = PlaybackViewModel.Factory())` from the top-level Composable. No DI framework for now.
+Rationale: Phase 1 has exactly one ViewModel and one production controller \u2014 a hand-rolled factory is the lowest-friction wiring that still keeps the VM constructor pure (no Android-context dependency, fully unit-testable). Pulling in Hilt or Koin for one VM would be premature. Alternative considered: instantiate the engine inside the activity and pass it through a `LocalCompositionProvider` \u2014 flexible but a layer of indirection without a current consumer; rejected.
+Revisit if: a second production-graph dependency appears (e.g. a `PlaybackService` shared between activity and notification controls in Phase 4) \u2014 at that point Hilt is the standard answer.

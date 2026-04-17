@@ -83,3 +83,42 @@ Two decisions closed during this step:
 
 One new decision recorded:
 - **D-11** — Test seam: introduce `AudioSink` interface so the engine can be unit-tested on the JVM without Robolectric or instrumented tests; production `AudioTrackSink` is the only Android-framework code in the audio package.
+
+### Phase Plan: Step 4 test spec
+- **Mode:** Discuss
+- **Outcome:** complete
+- **Contract changes:** none
+
+Expanded the Phase-1 test grid: replaced the single `T6` row with `T6 + T6a..T6h` (9 sub-tests covering initial state, start/stop wiring, idempotency, lifecycle cleanup, rapid-toggle parity with T5, and controller-failure resilience). Queued four new decisions (`D-12..D-15`) covering state surface (StateFlow vs. Compose MutableState), controller seam, Step-4 dependencies, and ViewModel construction. Added a `Step 4 implementation notes` subsection documenting what's deliberately out of scope: Compose UI rendering tests deferred to Step 5's manual end-to-end check, the fuller `Starting | FadingOut | Stopped` PlaybackState shape kept for Phase 2/3, and persistence of last-used values left for Phase 3.
+
+### Step 4: Compose UI + ViewModel
+- **Mode:** Code
+- **Outcome:** complete — T6 + T6a..T6h passed (9 PlaybackViewModel tests). Total Phase-1 test count: 15 (3 NoiseSource + 3 AudioEngine + 9 PlaybackViewModel), 0 failures, 0 errors. `:app:testDebugUnitTest :app:assembleDebug` BUILD SUCCESSFUL in 29 s (warm).
+- **Contract changes:** none
+
+Closed all four queued decisions (D-12..D-15) as recommended in the phase plan:
+- **D-12** — State surface: `StateFlow<PlaybackState>` exposed by the VM; Compose collects via `collectAsStateWithLifecycle()`. `MutableStateFlow` updates are synchronous on whatever thread fires the event handler — no coroutine machinery needed at this stage.
+- **D-13** — Controller seam: introduced `interface PlaybackController { val isPlaying; fun start(); fun stop() }` next to `AudioSink` in the `audio` package. `AudioEngine` implements it directly — its existing signatures already matched, so no adapter was needed; tests inject a `FakeController`.
+- **D-14** — Dependencies: added `androidx.lifecycle:lifecycle-viewmodel-compose` and `androidx.lifecycle:lifecycle-runtime-compose`, both pinned to 2.8.7 via the existing `lifecycleRuntimeKtx` version ref. No new test deps; coroutines come in transitively through Compose.
+- **D-15** — VM construction: `PlaybackViewModel.Factory` builds a real `AudioEngine(sinkFactory = { AudioTrackSink() })` per VM instance. The activity calls `viewModel(factory = PlaybackViewModel.Factory())` from the composable, keeping the wiring inline (no DI framework yet).
+
+Files added in `app/src/main/java/com/noisemachine/app/`:
+- `audio/PlaybackController.kt` — narrow lifecycle interface (3 members).
+- `playback/PlaybackState.kt` — sealed interface with `Idle` and `Playing` data objects only (Phase 1 scope).
+- `playback/PlaybackViewModel.kt` — `MutableStateFlow<PlaybackState>` state holder; `onPlayClicked()` / `onStopClicked()` are idempotent and swallow controller failures (state reverts to `Idle` so the UI stays usable). `onCleared()` widened to `public override` and ensures the controller is stopped when the VM is destroyed mid-Playing.
+- `MainActivity.kt` — replaced placeholder `Text("Noise Machine")` with a `PlaybackControls` composable that switches between `Play` and `Stop` buttons based on collected state. Two `@Preview`s cover both states.
+
+Files modified:
+- `app/src/main/java/com/noisemachine/app/audio/AudioEngine.kt` — declared `: PlaybackController`, added `override` modifiers on `isPlaying`, `start()`, `stop()`. No behavior change.
+- `gradle/libs.versions.toml` — two new library entries.
+- `app/build.gradle.kts` — wired the two new `implementation(...)` deps.
+
+Tests in `app/src/test/java/com/noisemachine/app/playback/PlaybackViewModelTest.kt` use a single `FakeController` that records start/stop call counts and supports a one-shot `failNextStart` flag (T6h). Nine tests in total — T6/T6a..T6h plus a complementary "onCleared while Idle is a no-op" assertion under T6f.
+
+One bug en route — the first build failed with:
+```
+Type 'androidx.compose.runtime.State<…>' has no method 'getValue(Nothing?, KProperty0<*>)', so it cannot serve as a delegate.
+```
+on the `val state by viewModel.state.collectAsStateWithLifecycle()` line. Root cause: `androidx.compose.runtime.getValue` is an extension operator, not part of the `State<T>` API surface, and is *not* re-exported by `collectAsStateWithLifecycle`. Adding `import androidx.compose.runtime.getValue` resolved it. Promoted to a DEVPLAN gotcha.
+
+Manual on-device verification of audible noise still belongs to Step 5 (end-to-end wiring). The Compose UI compiles, `assembleDebug` produces a working APK, and the ViewModel's lifecycle is fully covered by JVM tests — but actually hearing the white noise on hardware is the real Phase-1 milestone and the right place for that is Step 5's smoke pass.

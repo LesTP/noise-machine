@@ -2,7 +2,7 @@
 module: core-playback
 phase: 1
 phase_title: Core Playback
-step: 4 of 5
+step: 5 of 5
 mode: Code
 blocked: null
 regime: Build
@@ -36,12 +36,13 @@ review_done: false
   - **Config cache can mask stale state.** If a build behaves weirdly after a big change, try `--no-configuration-cache` once.
   - **`testDebugUnitTest` cold cost.** With config cache warm but no daemon, a clean unit-test run takes ~75 s (daemon startup + Kotlin compile). Subsequent runs reuse the daemon and are seconds.
   - **AudioFormat constant naming.** It's `AudioFormat.ENCODING_PCM_16BIT` (no underscore between `16` and `BIT`); `ENCODING_PCM_FLOAT` *does* have the underscore. Easy to get wrong by analogy.
+  - **`val state by flow.collectAsStateWithLifecycle()` needs `import androidx.compose.runtime.getValue`.** Without the explicit `getValue` import, Kotlin can't resolve the `by`-delegate operator on `androidx.compose.runtime.State<T>` and the build fails with `has no method 'getValue(…)'`.
   <!-- Add more operational knowledge as learned through trial-and-error. -->
 
 ## Current Status
 
 - **Phase** — 1: Core Playback
-- **Focus** — Step 4: Compose UI + ViewModel (Play/Stop button, PlaybackState)
+- **Focus** — Step 5: End-to-end wiring and on-device verification (audible noise, manual rapid-toggle smoke)
 - **Blocked/Broken** — None
 
 ## Phase 1: Core Playback
@@ -55,7 +56,7 @@ review_done: false
 1. [x] **Android project scaffold** — Gradle project (Kotlin, Compose, min API 26), AndroidManifest, empty MainActivity with Compose, verify clean build. *(done 2026-04-16; T7 passed)*
 2. [x] **NoiseSource** — Allocation-free white-noise sample generator. Unit tests: mean ≈ 0, values in [-1,1], no repeated patterns, correct buffer fill. *(done 2026-04-17; T1, T2, T3 passed)*
 3. [x] **AudioEngine** — Owns AudioTrack instance (16-bit PCM, 44100 Hz, stereo), dedicated render thread, start/stop API. NoiseSource wired in. Manual verification: audible white noise on device/emulator. *(done 2026-04-17; T4 passed via FakeSink, T5 passed via 20× rapid toggle. Audible-on-device verification deferred to Phase 1 close-out / Step 5.)*
-4. [ ] **Compose UI + ViewModel** — Main screen with Play/Stop button. PlaybackViewModel exposes PlaybackState (Idle/Playing). Button triggers AudioEngine start/stop through ViewModel.
+4. [x] **Compose UI + ViewModel** — Main screen with Play/Stop button. PlaybackViewModel exposes PlaybackState (Idle/Playing). Button triggers AudioEngine start/stop through ViewModel. *(done 2026-04-17; T6 + T6a–h passed; assembleDebug passes.)*
 5. [ ] **End-to-end wiring and test** — Full path works: tap Play → ViewModel → AudioEngine → NoiseSource → AudioTrack → audible output. Tap Stop → silence. Unit tests for ViewModel state transitions. Verify no crashes on rapid start/stop.
 
 ### Test Spec
@@ -83,10 +84,10 @@ review_done: false
 - **D-7:** Sample rate — *closed in Step 3 at 44100 Hz; AudioTrackSink hard-codes via constructor default; see DECISIONS.md.*
 - **D-8:** AudioTrack buffer size — *closed in Step 3 at `max(minBufferBytes × 2, framesPerWrite × bytesPerFrame)`; render quantum 1024 frames; see DECISIONS.md.*
 - **D-9:** Toolchain pins (AGP 8.7.3 / Gradle 8.10.2 / Kotlin 2.0.21 / Compose BOM 2024.10.01) — *closed in Step 1; see DECISIONS.md.*
-- **D-12:** State surface — `StateFlow<PlaybackState>` (collected in Compose via `collectAsStateWithLifecycle()`) vs. Compose `MutableState`. *Recommendation: `StateFlow`. Resolve at Step 4 entry.*
-- **D-13:** Controller seam — introduce a `PlaybackController` interface (`start / stop / isPlaying`) so the VM can be unit-tested with a `FakeController`, mirroring D-11. *Recommendation: yes. Resolve at Step 4 entry.*
-- **D-14:** Step 4 dependencies — add `androidx.lifecycle:lifecycle-viewmodel-compose` and `androidx.lifecycle:lifecycle-runtime-compose` (matched to the existing `lifecycleRuntimeKtx` family). No new test deps. *Resolve at Step 4 entry.*
-- **D-15:** ViewModel construction — a `PlaybackViewModel.Factory` wires the production `AudioEngine` (with `AudioTrackSink` factory) into the VM; the activity passes the factory to `viewModel(factory = …)`. *Resolve at Step 4 entry.*
+- **D-12:** State surface — *closed in Step 4 as `StateFlow<PlaybackState>`; collected in Compose via `collectAsStateWithLifecycle()`; see DECISIONS.md.*
+- **D-13:** Controller seam — *closed in Step 4 as `interface PlaybackController { isPlaying; start(); stop() }`; `AudioEngine` implements it directly (no adapter); tests use `FakeController`; see DECISIONS.md.*
+- **D-14:** Step 4 dependencies — *closed in Step 4: added `androidx.lifecycle:lifecycle-viewmodel-compose` and `androidx.lifecycle:lifecycle-runtime-compose` (both 2.8.7 via existing `lifecycleRuntimeKtx` ref).*
+- **D-15:** ViewModel construction — *closed in Step 4: `PlaybackViewModel.Factory` constructs `AudioEngine(sinkFactory = { AudioTrackSink() })`; activity passes the factory to `viewModel(factory = …)`; see DECISIONS.md.*
 
 ### Step 4 implementation notes
 - **Out of scope for Step 4:** Compose UI rendering tests (Play vs. Stop button visibility per state) require either Robolectric or `androidTest` and are deferred to Step 5's manual end-to-end check, consistent with D-11.
