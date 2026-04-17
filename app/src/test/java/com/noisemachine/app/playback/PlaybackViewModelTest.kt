@@ -297,4 +297,94 @@ class PlaybackViewModelTest {
         assertSame(PlaybackState.Idle, vm.state.value)
         assertEquals(1, controller.stopCalls.get())
     }
+
+    // ── Phase 3 timer tests ─────────────────────────────────────────
+
+    /**
+     * T26 — Timer countdown ticks.
+     *
+     * Verifies that onTimerSelected arms the timer and each 1 s tick
+     * decrements remainingMs.
+     */
+    @Test
+    fun timer_countdown_ticks() = runTest(testDispatcher) {
+        val controller = FakeController()
+        val vm = PlaybackViewModel(controller, fadeInMs = 0, fadeOutMs = 0)
+
+        vm.onTimerSelected(60_000)
+        runCurrent()
+        assertEquals(TimerState.Armed(60_000), vm.timerState.value)
+
+        advanceTimeBy(1000)
+        runCurrent()
+        assertEquals(TimerState.Armed(59_000), vm.timerState.value)
+
+        advanceTimeBy(1000)
+        runCurrent()
+        assertEquals(TimerState.Armed(58_000), vm.timerState.value)
+    }
+
+    /**
+     * T27 — Timer expiry triggers fade-out.
+     *
+     * Verifies that when the timer reaches 0 it calls onStopClicked(),
+     * which triggers fade-out (FadingOut → Idle).
+     */
+    @Test
+    fun timer_expiry_triggers_fade_out() = runTest(testDispatcher) {
+        val controller = FakeController()
+        val vm = PlaybackViewModel(controller, fadeInMs = 0, fadeOutMs = 500)
+
+        vm.onPlayClicked()
+        assertSame(PlaybackState.Playing, vm.state.value)
+
+        vm.onTimerSelected(3_000)
+        runCurrent()
+
+        // Advance past the 3 s timer.
+        advanceTimeBy(3_000)
+        runCurrent()
+
+        assertSame(TimerState.Off, vm.timerState.value)
+        assertSame(PlaybackState.FadingOut, vm.state.value)
+
+        // Let the fade-out complete.
+        advanceTimeBy(500)
+        runCurrent()
+
+        assertSame(PlaybackState.Idle, vm.state.value)
+        assertEquals(1, controller.stopCalls.get())
+    }
+
+    /**
+     * T28 — Manual stop cancels timer.
+     *
+     * Verifies that calling onStopClicked() while a timer is armed
+     * cancels the timer and resets it to Off.
+     */
+    @Test
+    fun manual_stop_cancels_timer() = runTest(testDispatcher) {
+        val controller = FakeController()
+        val vm = PlaybackViewModel(controller, fadeInMs = 0, fadeOutMs = 0)
+
+        vm.onPlayClicked()
+        assertSame(PlaybackState.Playing, vm.state.value)
+
+        vm.onTimerSelected(60_000)
+        runCurrent()
+
+        advanceTimeBy(2_000)
+        runCurrent()
+        assertEquals(TimerState.Armed(58_000), vm.timerState.value)
+
+        vm.onStopClicked()
+
+        assertSame(TimerState.Off, vm.timerState.value)
+        assertSame(PlaybackState.Idle, vm.state.value)
+
+        // Advance well past the original timer — it must not re-arm or tick.
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertSame(TimerState.Off, vm.timerState.value)
+    }
 }

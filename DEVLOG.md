@@ -343,3 +343,16 @@ Added fade-in/fade-out orchestration to the ViewModel:
 - `libs.versions.toml` + `build.gradle.kts` — added `kotlinx-coroutines-test:1.7.3` as testImplementation.
 
 Gotcha: `StandardTestDispatcher` requires `runCurrent()` after `advanceTimeBy()` to execute coroutine continuations that resume at the advanced time. Without it, the continuation is queued but not dispatched.
+
+### Step 3: TimerState + countdown coroutine + timer→fade-out integration
+- **Mode:** Code
+- **Outcome:** complete — T26, T27, T28 passed. Total test count: 46 (43 Phase 1–3.2 + 3 new), 0 failures.
+- **Contract changes:** none (timer is orthogonal to PlaybackController; no interface changes)
+
+Added auto-stop countdown timer as a separate `StateFlow<TimerState>` parallel to `PlaybackState` (D-22):
+
+- `TimerState.kt` — new sealed interface: `Off | Armed(remainingMs: Long)`. Kept separate from `PlaybackState` to avoid state explosion per D-22.
+- `PlaybackViewModel.kt` — added `_timerState`/`timerState` StateFlow (initial: `Off`), `timerJob: Job?`, and `onTimerSelected(durationMs: Long)`. The countdown coroutine loops `delay(1000)`, decrementing remaining by 1000 each tick. On expiry, sets timer to `Off` then calls `onStopClicked()` (which triggers fade-out if configured). `onStopClicked()` updated to cancel `timerJob` and reset timer to `Off` before the idle guard — ensures manual stop always clears the timer. `onCleared()` updated to cancel `timerJob`.
+- `PlaybackViewModelTest.kt` — T26 verifies countdown ticks (Armed(60000) → Armed(59000) → Armed(58000) after 1s + 1s). T27 verifies timer expiry triggers fade-out (3s timer → FadingOut → Idle after fade completes). T28 verifies manual stop cancels timer (Armed resets to Off, no re-arm after advancing past original duration).
+
+Edge case handling: timer expiry calls `onStopClicked()` which cancels `timerJob` — safe because the coroutine is past its last suspension point. Timer armed while not playing still counts down; if it expires and playback is idle, `onStopClicked()` is a no-op (existing idle guard). Timer cleanup in `onStopClicked()` is placed before the idle guard so it always runs.

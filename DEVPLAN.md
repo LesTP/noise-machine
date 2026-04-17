@@ -2,7 +2,7 @@
 module: core-playback
 phase: 3
 phase_title: Productization
-step: 3 of 6
+step: 4 of 6
 mode: Code
 blocked: null
 regime: Build
@@ -47,7 +47,7 @@ review_done: false
 ## Current Status
 
 - **Phase** — 3: Productization
-- **Focus** — Step 3.3: TimerState + countdown coroutine + timer→fade-out integration
+- **Focus** — Step 3.4: Persistence via DataStore (Color + timer duration)
 - **Blocked/Broken** — None
 
 ## Phase 1: Core Playback — Complete

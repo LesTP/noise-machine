@@ -41,7 +41,11 @@ class PlaybackViewModel(
     private val _color = MutableStateFlow(0f)
     val color: StateFlow<Float> = _color.asStateFlow()
 
+    private val _timerState = MutableStateFlow<TimerState>(TimerState.Off)
+    val timerState: StateFlow<TimerState> = _timerState.asStateFlow()
+
     private var fadeJob: Job? = null
+    private var timerJob: Job? = null
 
     fun onColorChanged(color: Float) {
         val c = color.coerceIn(0f, 1f)
@@ -81,7 +85,27 @@ class PlaybackViewModel(
         }
     }
 
+    fun onTimerSelected(durationMs: Long) {
+        timerJob?.cancel()
+        _timerState.value = TimerState.Armed(durationMs)
+        timerJob = viewModelScope.launch {
+            var remaining = durationMs
+            while (remaining > 0) {
+                delay(1000)
+                remaining -= 1000
+                _timerState.value = TimerState.Armed(remaining)
+            }
+            _timerState.value = TimerState.Off
+            onStopClicked()
+        }
+    }
+
     fun onStopClicked() {
+        // Cancel timer before the idle guard so manual stop always clears it.
+        timerJob?.cancel()
+        timerJob = null
+        _timerState.value = TimerState.Off
+
         val current = _state.value
         if (current == PlaybackState.Idle) return
 
@@ -114,6 +138,8 @@ class PlaybackViewModel(
     public override fun onCleared() {
         fadeJob?.cancel()
         fadeJob = null
+        timerJob?.cancel()
+        timerJob = null
         val current = _state.value
         if (current != PlaybackState.Idle) {
             try {
