@@ -2,7 +2,7 @@
 module: core-playback
 phase: 1
 phase_title: Core Playback
-step: 2 of 5
+step: 3 of 5
 mode: Code
 blocked: null
 regime: Build
@@ -31,15 +31,16 @@ review_done: false
   - **First build is slow.** Cold `.\gradlew.bat assembleDebug` takes ~4 min (wrapper bootstrap + dep download). Warm incremental builds should be well under 30 s with configuration cache.
   - **Gradle daemon idle-hangs the invoking shell.** After `BUILD SUCCESSFUL` on Windows, the foreground `gradlew.bat` process often sits for minutes waiting for daemon idle-shutdown. Trust the Gradle-reported build time, not the shell's wall-clock.
   - **`libandroidx.graphics.path.so` strip warning** is benign (missing NDK `strip` on Windows PATH); ignore it.
-  - **Use the wrapper, not system Gradle.** System `gradle` is 9.4.0, incompatible with AGP 8.7. Always call `.\gradlew.bat` or `./gradlew`.
+- **Use the wrapper, not system Gradle.** System `gradle` is 9.4.0, incompatible with AGP 8.7. Always call `.\gradlew.bat` or `./gradlew`.
   - **`local.properties` is per-machine and gitignored.** If a fresh clone fails to find the SDK, write `sdk.dir=...` there.
   - **Config cache can mask stale state.** If a build behaves weirdly after a big change, try `--no-configuration-cache` once.
+  - **`testDebugUnitTest` cold cost.** With config cache warm but no daemon, a clean unit-test run takes ~75 s (daemon startup + Kotlin compile). Subsequent runs reuse the daemon and are seconds.
   <!-- Add more operational knowledge as learned through trial-and-error. -->
 
 ## Current Status
 
 - **Phase** — 1: Core Playback
-- **Focus** — Step 2: NoiseSource (allocation-free white-noise generator + unit tests)
+- **Focus** — Step 3: AudioEngine (AudioTrack 16-bit PCM 44100 Hz stereo, render thread, start/stop)
 - **Blocked/Broken** — None
 
 ## Phase 1: Core Playback
@@ -51,7 +52,7 @@ review_done: false
 ### Steps
 
 1. [x] **Android project scaffold** — Gradle project (Kotlin, Compose, min API 26), AndroidManifest, empty MainActivity with Compose, verify clean build. *(done 2026-04-16; T7 passed)*
-2. [ ] **NoiseSource** — Allocation-free white-noise sample generator. Unit tests: mean ≈ 0, values in [-1,1], no repeated patterns, correct buffer fill.
+2. [x] **NoiseSource** — Allocation-free white-noise sample generator. Unit tests: mean ≈ 0, values in [-1,1], no repeated patterns, correct buffer fill. *(done 2026-04-17; T1, T2, T3 passed)*
 3. [ ] **AudioEngine** — Owns AudioTrack instance (16-bit PCM, 44100 Hz, stereo), dedicated render thread, start/stop API. NoiseSource wired in. Manual verification: audible white noise on device/emulator.
 4. [ ] **Compose UI + ViewModel** — Main screen with Play/Stop button. PlaybackViewModel exposes PlaybackState (Idle/Playing). Button triggers AudioEngine start/stop through ViewModel.
 5. [ ] **End-to-end wiring and test** — Full path works: tap Play → ViewModel → AudioEngine → NoiseSource → AudioTrack → audible output. Tap Stop → silence. Unit tests for ViewModel state transitions. Verify no crashes on rapid start/stop.
