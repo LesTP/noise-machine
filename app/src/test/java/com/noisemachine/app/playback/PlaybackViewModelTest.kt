@@ -42,6 +42,11 @@ class PlaybackViewModelTest {
             stopCalls.incrementAndGet()
             playing = false
         }
+
+        @Volatile var lastColor: Float = 0f
+        override fun setColor(color: Float) {
+            lastColor = color
+        }
     }
 
     /** T6a — initial state is Idle and the controller is untouched. */

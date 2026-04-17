@@ -225,3 +225,16 @@ Tests verify clamping of extreme inputs (T17), bounded output through the full S
 Two decisions closed:
 - **D-17** — Low-end containment: DC blocker (first-order HPF ~20 Hz) in GainSafety via leaky integrator subtraction. Chosen over explicit DC-blocker biquad for simplicity — only one state variable needed, and the cutoff is low enough that the approximation is adequate.
 - **D-19** — Gain compensation: static piecewise-linear curve indexed by Color, 3 anchor points. Chosen over dynamic RMS measurement for predictability and zero latency. Values are initial estimates; perceptual tuning in Step 7 may adjust the anchors.
+
+### Step 5: AudioEngine integration
+- **Mode:** Code
+- **Outcome:** complete — T19 passed (1 new test; runs 3 sub-cases at Color 0.0/0.5/1.0). Total test count: 38, 0 failures. `testDebugUnitTest` BUILD SUCCESSFUL.
+- **Contract changes:** `PlaybackController` interface — added `setColor(color: Float)`. Affects: `AudioEngine` (implements), `PlaybackViewModel` (calls), `PlaybackViewModelTest.FakeController` (implements).
+
+Wired the full DSP pipeline into `AudioEngine.renderLoop()`. The per-buffer flow is now: `NoiseSource.fill(buf) → SpectralShaper.process(buf, color) → GainSafety.process(buf, color) → floatMonoToInt16Stereo → AudioSink.write`. A `ParameterSmoother` owned by the engine provides lock-free Color smoothing — the UI thread writes a target via `setColor()` (`@Volatile` write), and the render thread reads the smoothed value once per buffer via `smoother.next()`.
+
+`PlaybackController` interface gained `setColor(Float)` so the ViewModel can forward slider values to the engine without knowing the concrete type. `PlaybackViewModel` exposes `onColorChanged(Float)` and a `color: StateFlow<Float>` for the UI to collect.
+
+SpectralShaper and GainSafety are created fresh per session (inside `start()`) alongside the sink and noise source, matching the existing per-session lifecycle. The smoother is created once at engine construction and persists across sessions, so the Color target survives stop/start cycles.
+
+No new decisions closed. Two compilation errors hit during development: an invalid hex literal (`0xC0L0RL`) and a `@Volatile` annotation on a local variable — both fixed before final test run.

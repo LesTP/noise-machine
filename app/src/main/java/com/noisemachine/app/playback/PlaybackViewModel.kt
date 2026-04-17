@@ -32,6 +32,15 @@ class PlaybackViewModel(
     private val _state = MutableStateFlow<PlaybackState>(PlaybackState.Idle)
     val state: StateFlow<PlaybackState> = _state.asStateFlow()
 
+    private val _color = MutableStateFlow(0f)
+    val color: StateFlow<Float> = _color.asStateFlow()
+
+    fun onColorChanged(color: Float) {
+        val c = color.coerceIn(0f, 1f)
+        _color.value = c
+        controller.setColor(c)
+    }
+
     fun onPlayClicked() {
         if (_state.value == PlaybackState.Playing) return
         try {
@@ -64,7 +73,6 @@ class PlaybackViewModel(
             }
             _state.value = PlaybackState.Idle
         }
-        super.onCleared()
     }
 
     /**

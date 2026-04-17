@@ -5,11 +5,11 @@ import kotlin.concurrent.withLock
 
 /**
  * Owns the playback render thread and orchestrates the per-buffer pipeline:
- * `NoiseSource → (Phase 2: SpectralShaper → GainSafety) → StereoStage → AudioSink`.
+ * `NoiseSource → SpectralShaper → GainSafety → StereoStage → AudioSink`.
  *
- * Phase 1 scope: only NoiseSource → mono-to-stereo conversion → AudioSink.
- * Spectral shaping, parameter smoothing, gain safety, and stereo decorrelation
- * land in later phases.
+ * Phase 2 scope: full Color engine wired — ParameterSmoother drives
+ * SpectralShaper and GainSafety per buffer. StereoStage is still
+ * restrained-stereo (identical channels, D-5).
  *
  * Lifecycle:
  * - [start] is idempotent — a second call while already playing is a no-op.
@@ -21,14 +21,17 @@ import kotlin.concurrent.withLock
  * - Render thread is a single dedicated `Thread`, recreated per session.
  * - Lifecycle methods are called from the lifecycle-control thread (UI /
  *   ViewModel / Service); they never touch the render thread's local state.
+ * - [setColor] writes to the [ParameterSmoother]'s `@Volatile` target —
+ *   safe to call from any thread without locking.
  * - Engine state visible across threads is a single `@Volatile Boolean`
  *   (`running`) — the render loop polls it once per buffer.
  *
  * Allocation discipline:
  * - Render-loop buffers (`monoBuf`, `stereoBuf`) are allocated once at the
  *   top of each session and reused for the full session.
- * - The hot loop calls only `NoiseSource.fill`, primitive math, and
- *   `AudioSink.write` — none of which allocate.
+ * - The hot loop calls only `NoiseSource.fill`, `SpectralShaper.process`,
+ *   `GainSafety.process`, primitive math, and `AudioSink.write` — none
+ *   of which allocate.
  *
  * @param sinkFactory creates a fresh [AudioSink] for each session. The engine
  *   never reuses a sink across `stop()` / `start()` because production sinks
@@ -49,8 +52,25 @@ class AudioEngine(
 
     private var renderThread: Thread? = null
 
+    /** Smoothed Color parameter. UI thread writes target; render thread reads. */
+    private val colorSmoother = ParameterSmoother(
+        initialValue = 0f,
+        sampleRate = sampleRateHz,
+        timeSeconds = 0.05f,
+    )
+
     override val isPlaying: Boolean
         get() = running
+
+    /**
+     * Set the Color parameter. Safe to call from any thread at any time.
+     * The value is smoothed by [ParameterSmoother] on the render thread.
+     *
+     * @param color spectral tilt in [0.0, 1.0]; 0 = white, 1 = brown-like
+     */
+    override fun setColor(color: Float) {
+        colorSmoother.setTarget(color.coerceIn(0f, 1f))
+    }
 
     /**
      * Begin playback. No-op if already playing. Returns once the render
@@ -65,8 +85,13 @@ class AudioEngine(
 
         running = true
         val noise = noiseFactory()
+        val shaper = SpectralShaper(sampleRateHz)
+        val safety = GainSafety(sampleRateHz)
 
-        val thread = Thread({ renderLoop(sink, noise, framesPerWrite) }, "noise-render")
+        val thread = Thread(
+            { renderLoop(sink, noise, shaper, safety, framesPerWrite) },
+            "noise-render",
+        )
         thread.priority = Thread.MAX_PRIORITY
         renderThread = thread
         thread.start()
@@ -93,12 +118,23 @@ class AudioEngine(
         }
     }
 
-    private fun renderLoop(sink: AudioSink, noise: NoiseSource, framesPerWrite: Int) {
+    private fun renderLoop(
+        sink: AudioSink,
+        noise: NoiseSource,
+        shaper: SpectralShaper,
+        safety: GainSafety,
+        framesPerWrite: Int,
+    ) {
         val monoBuf = FloatArray(framesPerWrite)
         val stereoBuf = ShortArray(framesPerWrite * CHANNELS)
         try {
             while (running) {
+                // Read smoothed Color value (one volatile read per buffer).
+                val color = colorSmoother.next()
+
                 noise.fill(monoBuf, framesPerWrite)
+                shaper.process(monoBuf, framesPerWrite, color)
+                safety.process(monoBuf, framesPerWrite, color)
                 floatMonoToInt16Stereo(monoBuf, stereoBuf, framesPerWrite)
                 sink.write(stereoBuf, framesPerWrite)
             }

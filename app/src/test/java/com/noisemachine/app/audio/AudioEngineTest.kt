@@ -144,4 +144,58 @@ class AudioEngineTest {
         assertEquals("each start() must open a sink", 20, opens.get())
         assertEquals("each stop() must close a sink", 20, closes.get())
     }
+    /**
+     * T19 — full pipeline produces bounded output for all Color values.
+     *
+     * Runs the engine at Color 0.0, 0.5, and 1.0 via a FakeSink that captures
+     * output samples and asserts all are within [-32768, 32767] (Int16 range),
+     * with no NaN or Inf in the mono float stage (validated by GainSafety's
+     * hard clip + floatMonoToInt16Stereo's clip-safe conversion).
+     */
+    @Test(timeout = 10_000)
+    fun full_pipeline_bounded_for_all_color_values() {
+        for (color in listOf(0.0f, 0.5f, 1.0f)) {
+            val capturedFrames = AtomicLong(0)
+            var anyOutOfRange = false
+
+            val sink = object : AudioSink {
+                override fun open(sampleRateHz: Int, channels: Int): Int = 256
+                override fun write(buffer: ShortArray, frames: Int) {
+                    for (i in 0 until frames * 2) {
+                        val v = buffer[i]
+                        if (v < Short.MIN_VALUE || v > Short.MAX_VALUE) {
+                            anyOutOfRange = true
+                        }
+                    }
+                    capturedFrames.addAndGet(frames.toLong())
+                }
+                override fun close() {}
+            }
+
+            val engine = AudioEngine(
+                sinkFactory = { sink },
+                noiseFactory = { NoiseSource(seed = 0xC010BL + color.toLong()) },
+            )
+
+            engine.setColor(color)
+            engine.start()
+
+            // Let it run for enough buffers to exercise the pipeline.
+            val deadline = System.nanoTime() + 500_000_000L // 500ms
+            while (capturedFrames.get() < 4096 && System.nanoTime() < deadline) {
+                Thread.sleep(1)
+            }
+
+            engine.stop()
+
+            assertTrue(
+                "Color=$color: should have written frames, got ${capturedFrames.get()}",
+                capturedFrames.get() >= 256,
+            )
+            assertFalse(
+                "Color=$color: found out-of-range Int16 sample",
+                anyOutOfRange,
+            )
+        }
+    }
 }

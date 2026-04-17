@@ -15,4 +15,5 @@ interface PlaybackController {
     val isPlaying: Boolean
     fun start()
     fun stop()
+    fun setColor(color: Float)
 }

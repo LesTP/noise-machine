@@ -2,7 +2,7 @@
 module: core-playback
 phase: 2
 phase_title: Color Engine
-step: 5 of 7
+step: 6 of 7
 mode: Code
 blocked: null
 regime: Build
@@ -43,7 +43,7 @@ review_done: false
 ## Current Status
 
 - **Phase** — 2: Color Engine
-- **Focus** — Step 5: AudioEngine integration (wire DSP pipeline + setColor API)
+- **Focus** — Step 6: Color slider UI (Compose Slider wired through ViewModel)
 - **Blocked/Broken** — None
 
 ## Phase 1: Core Playback — Complete
@@ -62,7 +62,7 @@ review_done: false
 2. [x] **Biquad** — Generic second-order IIR filter (Direct Form II Transposed). *(done 2026-04-17; T11/T12/T12b/T13/T13b passed)*
 3. [x] **SpectralShaper** — Cascaded biquad chain driven by Color [0,1]. *(done 2026-04-17; T14/T15/T15b/T16/T16b passed; D-16, D-20 closed)*
 4. [x] **GainSafety** — DC blocker + output normalization + hard clip. *(done 2026-04-17; T17/T17b/T18/T18b/T18c/T18d passed; D-17, D-19 closed)*
-5. [ ] **AudioEngine integration** — Wire ParameterSmoother + SpectralShaper + GainSafety into render loop. Add `setColor(Float)` to PlaybackController. Extend engine to accept color changes during playback.
+5. [x] **AudioEngine integration** — Wire ParameterSmoother + SpectralShaper + GainSafety into render loop. *(done 2026-04-17; T19 passed)*
 6. [ ] **Color slider UI** — Compose Slider on main screen (center zone). Wire Slider → ViewModel → PlaybackController.setColor(). Interactive in both Idle and Playing states.
 7. [ ] **Perceptual tuning** — *(Refine)* Tune coefficient curves, loudness compensation, low-end containment, ramp times on-device.
 
