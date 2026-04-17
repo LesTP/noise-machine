@@ -129,8 +129,8 @@ class AudioEngine(
         val stereoBuf = ShortArray(framesPerWrite * CHANNELS)
         try {
             while (running) {
-                // Read smoothed Color value (one volatile read per buffer).
-                val color = colorSmoother.next()
+                // Read smoothed Color value, advancing by one buffer's worth of samples.
+                val color = colorSmoother.nextBlock(framesPerWrite)
 
                 noise.fill(monoBuf, framesPerWrite)
                 shaper.process(monoBuf, framesPerWrite, color)

@@ -249,3 +249,16 @@ Added a Compose `Slider` to `MainActivity.kt`, wired through `PlaybackViewModel.
 `NoiseMachineApp` composable now collects `viewModel.color` via `collectAsStateWithLifecycle()` and passes it to `PlaybackControls`. Both `@Preview` composables updated with the new `color` and `onColorChanged` parameters.
 
 No decisions closed in this step.
+
+### Step 7: Perceptual tuning
+- **Mode:** Code + Refine
+- **Outcome:** complete — Bug fix (smoother rate mismatch) + on-device verification. M10–M20 manual tests passed on Pixel 6 emulator (Android 16.0). All 38 unit tests pass, 0 failures.
+- **Contract changes:** none
+
+On-device testing revealed the Color slider had no audible effect. Root cause: `ParameterSmoother.next()` advances by 1 sample, but AudioEngine called it once per buffer (1024 frames). The effective time constant was ~1000× slower than intended (~51 seconds instead of 50 ms), so the smoothed Color value barely moved from its initial 0.0.
+
+Fix: added `nextBlock(samples: Int)` to ParameterSmoother — advances the ramp by N samples in O(1) using the closed-form `retain = exp(n * ln(1 - alpha))`, then `current += (target - current) * (1 - retain)`. AudioEngine now calls `colorSmoother.nextBlock(framesPerWrite)` instead of `next()`.
+
+After the fix, on-device testing confirmed: Color=0 produces bright white noise, Color=1 produces deep brown-ish noise, and the slider transitions smoothly between them. The initial coefficient curves (low-shelf +10 dB at 250 Hz, high-shelf -14 dB at 2500 Hz) and gain compensation (0.85/0.95/0.60 at Color 0/0.5/1.0) produce an acceptable Color continuum without further tuning. M10–M20 all pass.
+
+No decisions closed in this step. The initial curves from D-16/D-20 proved adequate; further refinement can happen in a future iteration if needed.

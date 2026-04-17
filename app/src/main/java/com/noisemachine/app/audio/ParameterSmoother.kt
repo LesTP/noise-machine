@@ -59,4 +59,25 @@ class ParameterSmoother(
         current += (t - current) * alpha
         return current
     }
+
+    /**
+     * Advance the ramp by [samples] samples at once and return the current
+     * smoothed value. Mathematically equivalent to calling [next] `samples`
+     * times, but computed in O(1) using the closed-form exponential step:
+     * `blockAlpha = 1 - (1 - alpha)^samples`.
+     *
+     * Use this when the smoother is called once per buffer rather than once
+     * per sample (e.g., for Color parameter smoothing in the render loop).
+     * Allocation-free.
+     */
+    fun nextBlock(samples: Int): Float {
+        val t = target // single volatile read
+        if (alpha >= 1f) {
+            current = t
+        } else {
+            val retain = kotlin.math.exp(samples.toFloat() * kotlin.math.ln(1f - alpha))
+            current += (t - current) * (1f - retain)
+        }
+        return current
+    }
 }

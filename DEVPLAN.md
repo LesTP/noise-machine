@@ -3,7 +3,7 @@ module: core-playback
 phase: 2
 phase_title: Color Engine
 step: 7 of 7
-mode: Code
+mode: Review
 blocked: null
 regime: Build
 review_done: false
@@ -43,7 +43,7 @@ review_done: false
 ## Current Status
 
 - **Phase** — 2: Color Engine
-- **Focus** — Step 7: Perceptual tuning (Refine — on-device listening)
+- **Focus** — All steps complete; awaiting phase review
 - **Blocked/Broken** — None
 
 ## Phase 1: Core Playback — Complete
@@ -64,7 +64,7 @@ review_done: false
 4. [x] **GainSafety** — DC blocker + output normalization + hard clip. *(done 2026-04-17; T17/T17b/T18/T18b/T18c/T18d passed; D-17, D-19 closed)*
 5. [x] **AudioEngine integration** — Wire ParameterSmoother + SpectralShaper + GainSafety into render loop. *(done 2026-04-17; T19 passed)*
 6. [x] **Color slider UI** — Compose Slider on main screen wired through ViewModel. *(done 2026-04-17; T20 passed)*
-7. [ ] **Perceptual tuning** — *(Refine)* Tune coefficient curves, loudness compensation, low-end containment, ramp times on-device.
+7. [x] **Perceptual tuning** — Bug fix (smoother rate mismatch) + on-device verification. *(done 2026-04-17; M10–M20 passed)*
 
 ### Test Spec
 
