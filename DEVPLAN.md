@@ -2,7 +2,7 @@
 module: core-playback
 phase: 2
 phase_title: Color Engine
-step: 6 of 7
+step: 7 of 7
 mode: Code
 blocked: null
 regime: Build
@@ -43,7 +43,7 @@ review_done: false
 ## Current Status
 
 - **Phase** — 2: Color Engine
-- **Focus** — Step 6: Color slider UI (Compose Slider wired through ViewModel)
+- **Focus** — Step 7: Perceptual tuning (Refine — on-device listening)
 - **Blocked/Broken** — None
 
 ## Phase 1: Core Playback — Complete
@@ -63,7 +63,7 @@ review_done: false
 3. [x] **SpectralShaper** — Cascaded biquad chain driven by Color [0,1]. *(done 2026-04-17; T14/T15/T15b/T16/T16b passed; D-16, D-20 closed)*
 4. [x] **GainSafety** — DC blocker + output normalization + hard clip. *(done 2026-04-17; T17/T17b/T18/T18b/T18c/T18d passed; D-17, D-19 closed)*
 5. [x] **AudioEngine integration** — Wire ParameterSmoother + SpectralShaper + GainSafety into render loop. *(done 2026-04-17; T19 passed)*
-6. [ ] **Color slider UI** — Compose Slider on main screen (center zone). Wire Slider → ViewModel → PlaybackController.setColor(). Interactive in both Idle and Playing states.
+6. [x] **Color slider UI** — Compose Slider on main screen wired through ViewModel. *(done 2026-04-17; T20 passed)*
 7. [ ] **Perceptual tuning** — *(Refine)* Tune coefficient curves, loudness compensation, low-end containment, ramp times on-device.
 
 ### Test Spec

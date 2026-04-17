@@ -238,3 +238,14 @@ Wired the full DSP pipeline into `AudioEngine.renderLoop()`. The per-buffer flow
 SpectralShaper and GainSafety are created fresh per session (inside `start()`) alongside the sink and noise source, matching the existing per-session lifecycle. The smoother is created once at engine construction and persists across sessions, so the Color target survives stop/start cycles.
 
 No new decisions closed. Two compilation errors hit during development: an invalid hex literal (`0xC0L0RL`) and a `@Volatile` annotation on a local variable — both fixed before final test run.
+
+### Step 6: Color slider UI
+- **Mode:** Code
+- **Outcome:** complete — T20 passed (`assembleDebug` BUILD SUCCESSFUL). All 38 unit tests pass, 0 failures.
+- **Contract changes:** none
+
+Added a Compose `Slider` to `MainActivity.kt`, wired through `PlaybackViewModel.onColorChanged()` to `PlaybackController.setColor()`. The slider sits below the Play/Stop button in a full-width column with 32 dp horizontal padding. A "Color" label sits above the slider; "Bright" and "Deep" hints appear at the extremes (Color < 0.2 and > 0.8 respectively). The slider is interactive regardless of playback state — the user can set Color before pressing Play and the engine will use it when playback starts.
+
+`NoiseMachineApp` composable now collects `viewModel.color` via `collectAsStateWithLifecycle()` and passes it to `PlaybackControls`. Both `@Preview` composables updated with the new `color` and `onColorChanged` parameters.
+
+No decisions closed in this step.

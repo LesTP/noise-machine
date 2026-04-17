@@ -8,10 +8,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -41,10 +43,8 @@ fun NoiseMachineApp(
     viewModel: PlaybackViewModel = viewModel(factory = PlaybackViewModel.Factory()),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val color by viewModel.color.collectAsStateWithLifecycle()
 
-    // Phase 1: no foreground service, so stop audio when the Activity stops
-    // (home press, back press, task switch). Phase 4 replaces this with a
-    // foreground-service lifecycle that keeps playback alive in the background.
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
         viewModel.onStopClicked()
     }
@@ -59,8 +59,10 @@ fun NoiseMachineApp(
             ) {
                 PlaybackControls(
                     state = state,
+                    color = color,
                     onPlay = viewModel::onPlayClicked,
                     onStop = viewModel::onStopClicked,
+                    onColorChanged = viewModel::onColorChanged,
                 )
             }
         }
@@ -70,18 +72,38 @@ fun NoiseMachineApp(
 @Composable
 private fun PlaybackControls(
     state: PlaybackState,
+    color: Float,
     onPlay: () -> Unit,
     onStop: () -> Unit,
+    onColorChanged: (Float) -> Unit,
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(16.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 32.dp),
     ) {
         Text(text = "Noise Machine", style = MaterialTheme.typography.headlineMedium)
+
         when (state) {
             PlaybackState.Idle -> Button(onClick = onPlay) { Text("Play") }
             PlaybackState.Playing -> Button(onClick = onStop) { Text("Stop") }
         }
+
+        Text(
+            text = "Color",
+            style = MaterialTheme.typography.labelMedium,
+        )
+        Slider(
+            value = color,
+            onValueChange = onColorChanged,
+            valueRange = 0f..1f,
+        )
+        Text(
+            text = if (color < 0.2f) "Bright" else if (color > 0.8f) "Deep" else "",
+            style = MaterialTheme.typography.bodySmall,
+        )
     }
 }
 
@@ -89,7 +111,13 @@ private fun PlaybackControls(
 @Composable
 private fun PlaybackControlsIdlePreview() {
     MaterialTheme {
-        PlaybackControls(state = PlaybackState.Idle, onPlay = {}, onStop = {})
+        PlaybackControls(
+            state = PlaybackState.Idle,
+            color = 0f,
+            onPlay = {},
+            onStop = {},
+            onColorChanged = {},
+        )
     }
 }
 
@@ -97,6 +125,12 @@ private fun PlaybackControlsIdlePreview() {
 @Composable
 private fun PlaybackControlsPlayingPreview() {
     MaterialTheme {
-        PlaybackControls(state = PlaybackState.Playing, onPlay = {}, onStop = {})
+        PlaybackControls(
+            state = PlaybackState.Playing,
+            color = 0.5f,
+            onPlay = {},
+            onStop = {},
+            onColorChanged = {},
+        )
     }
 }
