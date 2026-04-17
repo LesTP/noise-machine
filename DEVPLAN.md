@@ -2,7 +2,7 @@
 module: core-playback
 phase: 1
 phase_title: Core Playback
-step: 3 of 5
+step: 4 of 5
 mode: Code
 blocked: null
 regime: Build
@@ -35,12 +35,13 @@ review_done: false
   - **`local.properties` is per-machine and gitignored.** If a fresh clone fails to find the SDK, write `sdk.dir=...` there.
   - **Config cache can mask stale state.** If a build behaves weirdly after a big change, try `--no-configuration-cache` once.
   - **`testDebugUnitTest` cold cost.** With config cache warm but no daemon, a clean unit-test run takes ~75 s (daemon startup + Kotlin compile). Subsequent runs reuse the daemon and are seconds.
+  - **AudioFormat constant naming.** It's `AudioFormat.ENCODING_PCM_16BIT` (no underscore between `16` and `BIT`); `ENCODING_PCM_FLOAT` *does* have the underscore. Easy to get wrong by analogy.
   <!-- Add more operational knowledge as learned through trial-and-error. -->
 
 ## Current Status
 
 - **Phase** — 1: Core Playback
-- **Focus** — Step 3: AudioEngine (AudioTrack 16-bit PCM 44100 Hz stereo, render thread, start/stop)
+- **Focus** — Step 4: Compose UI + ViewModel (Play/Stop button, PlaybackState)
 - **Blocked/Broken** — None
 
 ## Phase 1: Core Playback
@@ -53,7 +54,7 @@ review_done: false
 
 1. [x] **Android project scaffold** — Gradle project (Kotlin, Compose, min API 26), AndroidManifest, empty MainActivity with Compose, verify clean build. *(done 2026-04-16; T7 passed)*
 2. [x] **NoiseSource** — Allocation-free white-noise sample generator. Unit tests: mean ≈ 0, values in [-1,1], no repeated patterns, correct buffer fill. *(done 2026-04-17; T1, T2, T3 passed)*
-3. [ ] **AudioEngine** — Owns AudioTrack instance (16-bit PCM, 44100 Hz, stereo), dedicated render thread, start/stop API. NoiseSource wired in. Manual verification: audible white noise on device/emulator.
+3. [x] **AudioEngine** — Owns AudioTrack instance (16-bit PCM, 44100 Hz, stereo), dedicated render thread, start/stop API. NoiseSource wired in. Manual verification: audible white noise on device/emulator. *(done 2026-04-17; T4 passed via FakeSink, T5 passed via 20× rapid toggle. Audible-on-device verification deferred to Phase 1 close-out / Step 5.)*
 4. [ ] **Compose UI + ViewModel** — Main screen with Play/Stop button. PlaybackViewModel exposes PlaybackState (Idle/Playing). Button triggers AudioEngine start/stop through ViewModel.
 5. [ ] **End-to-end wiring and test** — Full path works: tap Play → ViewModel → AudioEngine → NoiseSource → AudioTrack → audible output. Tap Stop → silence. Unit tests for ViewModel state transitions. Verify no crashes on rapid start/stop.
 
@@ -71,6 +72,6 @@ review_done: false
 
 ### Decisions to resolve during this phase
 - **D-6:** Min API level — *confirmed API 26, compileSdk/targetSdk 34 in Step 1; see DECISIONS.md.*
-- **D-7:** Sample rate — provisionally 44100 Hz. AudioTrack native rate may differ on some devices; resolve during Step 3.
-- **D-8:** AudioTrack buffer size — use `AudioTrack.getMinBufferSize() * 2` as starting point; tune during Step 3.
+- **D-7:** Sample rate — *closed in Step 3 at 44100 Hz; AudioTrackSink hard-codes via constructor default; see DECISIONS.md.*
+- **D-8:** AudioTrack buffer size — *closed in Step 3 at `max(minBufferBytes × 2, framesPerWrite × bytesPerFrame)`; render quantum 1024 frames; see DECISIONS.md.*
 - **D-9:** Toolchain pins (AGP 8.7.3 / Gradle 8.10.2 / Kotlin 2.0.21 / Compose BOM 2024.10.01) — *closed in Step 1; see DECISIONS.md.*

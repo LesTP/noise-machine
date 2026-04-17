@@ -59,3 +59,27 @@ One decision closed during this step:
 - **D-10** — Noise RNG: use `java.util.SplittableRandom` (allocation-free `nextDouble()`, no synchronized seed update, available since API 24 — well below our minSdk 26). Rejected `java.util.Random` (synchronized CAS on every call) and a hand-rolled `XorShift64` (not needed once SplittableRandom met the allocation-freedom bar). See DECISIONS.md.
 
 Operational note added to DEVPLAN Cold Start gotchas: cold `:app:testDebugUnitTest` is ~75 s (daemon spin-up + Kotlin compile); warm runs are seconds.
+
+### Step 3: AudioEngine
+- **Mode:** Code
+- **Outcome:** complete — T4 (lifecycle) and T5 (rapid toggle) passed. `:app:testDebugUnitTest` BUILD SUCCESSFUL in 13 s (warm daemon); 6 tests across 2 classes, 0 failures, 0 errors.
+- **Contract changes:** none
+
+Implemented three new files in `app/src/main/java/com/noisemachine/app/audio/`:
+
+- **`AudioSink`** — narrow interface (`open(sampleRateHz, channels) → framesPerWrite`, `write(buffer, frames)`, `close()`). Single-use lifecycle; one instance per playback session. Defined explicitly so `AudioEngine` doesn't depend on Android framework types and can be tested entirely on the JVM.
+- **`AudioTrackSink`** — production impl wrapping `android.media.AudioTrack` in `MODE_STREAM`. Closes D-7 (44100 Hz fixed at the `AudioEngine` constructor default) and D-8 (`bufferSizeInBytes = max(minBufferBytes × 2, framesPerWrite × bytesPerFrame)`, render quantum 1024 frames). Uses `USAGE_MEDIA` / `CONTENT_TYPE_MUSIC` audio attributes; `WRITE_BLOCKING` writes are looped to handle short returns; `close()` is `IllegalStateException`-tolerant so it's safe to call from any lifecycle path.
+- **`AudioEngine`** — owns the dedicated render thread (`Thread.MAX_PRIORITY`, name `"noise-render"`). `start()` and `stop()` are guarded by a single `ReentrantLock`, making them idempotent and safe to interleave from any thread (this is what makes T5 a one-liner: `repeat(20) { engine.start(); engine.stop() }`). `isPlaying` is a `@Volatile Boolean` getter. The render loop pre-allocates `monoBuf: FloatArray(framesPerWrite)` and `stereoBuf: ShortArray(framesPerWrite × 2)` once per session and runs `noise.fill → floatMonoToInt16Stereo → sink.write` with no per-iteration allocations. Mono → stereo conversion is restrained-stereo (D-5): both channels carry the identical sample, clip-safe at ±1.0.
+
+Tests in `app/src/test/java/com/noisemachine/app/audio/AudioEngineTest.kt` use a private `FakeSink` that counts `open/close` calls and frames written. T4 verifies the full lifecycle including that the render loop produces at least one buffer of output before `stop()`. T5 uses a fresh sink per `start()` (via the factory) so we can assert `opens == closes == 20` after the rapid-toggle storm — strongest end-state invariant for "no leaks". An additional T4b verifies idempotency of `start()` and `stop()`.
+
+One bug en route — first compile failed with `Unresolved reference 'ENCODING_PCM_16_BIT'`. The constant is `AudioFormat.ENCODING_PCM_16BIT` (no underscore between `16` and `BIT`); `ENCODING_PCM_FLOAT` does have the underscore, which is the source of the confusion. Fixed and added a gotcha in DEVPLAN Cold Start Summary.
+
+Manual on-device "audible white noise" verification deferred to Phase 1 wrap-up (Step 5, end-to-end wiring) when the Compose UI can drive the engine — no point launching the app twice.
+
+Two decisions closed during this step:
+- **D-7** — Sample rate: 44100 Hz, fixed at the engine constructor default. Hardware-native rate query deferred until/unless device testing reveals problems.
+- **D-8** — AudioTrack buffer sizing: `max(minBufferBytes × 2, framesPerWrite × bytesPerFrame)`; render quantum is 1024 frames per write call. The render quantum and the AudioTrack buffer are intentionally independent — the buffer is a glitch-margin reservoir, the quantum is the engine's per-iteration work unit.
+
+One new decision recorded:
+- **D-11** — Test seam: introduce `AudioSink` interface so the engine can be unit-tested on the JVM without Robolectric or instrumented tests; production `AudioTrackSink` is the only Android-framework code in the audio package.
