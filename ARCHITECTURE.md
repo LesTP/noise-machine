@@ -63,7 +63,7 @@ The render loop runs on a dedicated high-priority audio thread owned by AudioEng
 ## Implementation Sequence
 | Order | Module | Rationale | Status |
 |-------|--------|-----------|--------|
-| 1 | Phase 1 — Core playback: NoiseSource + AudioTrack + Play/Stop | Proves the real-time PCM output path before any DSP complexity | Not started |
+| 1 | Phase 1 — Core playback: NoiseSource + AudioTrack + Play/Stop | Proves the real-time PCM output path before any DSP complexity | Phase 1 complete |
 | 2 | Phase 2 — Color engine: SpectralShaper + ParameterSmoother + GainSafety + tuning | Primary product feature; locks in the audible quality bar | Not started |
 | 3 | Phase 3 — Productization: Timer, fade-in/fade-out, Settings skeleton, persistence | Table stakes for a sleep app | Not started |
 | 4 | Phase 4 — Background robustness: Foreground service + notification + screen-off behavior | Required for long unattended sessions | Not started |

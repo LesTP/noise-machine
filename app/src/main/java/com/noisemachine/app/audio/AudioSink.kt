@@ -35,8 +35,8 @@ interface AudioSink {
     fun write(buffer: ShortArray, frames: Int)
 
     /**
-     * Stop the sink and release all underlying resources. Safe to call from
-     * the lifecycle-control thread (not the render thread).
+     * Stop the sink and release all underlying resources. Called from the
+     * render thread (same thread that calls [open] and [write]).
      */
     fun close()
 }

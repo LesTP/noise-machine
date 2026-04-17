@@ -142,3 +142,20 @@ Ran the full manual acceptance suite (M1–M9) on the emulator:
 **Bug found and fixed:** M7 and M9 initially failed — audio continued playing after Home or Back press. Root cause: the ViewModel's `onCleared()` only fires when the Activity is destroyed (which can be delayed), and `onStop()` had no hook to stop playback. Fix: added `LifecycleEventEffect(Lifecycle.Event.ON_STOP)` in the `NoiseMachineApp` composable to call `viewModel.onStopClicked()` when the Activity stops. This is correct Phase 1 behavior — no foreground service yet; Phase 4 will replace this with foreground-service lifecycle that keeps playback alive in the background.
 
 One benign system warning observed: `AppOps: attributionTag not declared in manifest of com.noisemachine.app` — this is an Android system-level message unrelated to our app, safe to ignore.
+
+### Phase Review
+- **Mode:** Review
+- **Outcome:** complete
+- **Contract changes:** none
+
+Reviewed all 14 Phase 1 files (8 source, 3 test, 3 build/config) against ARCHITECTURE.md. No must-fix issues found. Three should-fix items applied:
+1. `AudioSink.kt` — corrected `close()` KDoc to reflect actual render-thread calling convention (was incorrectly documented as lifecycle-control thread).
+2. `MainActivity.kt` — removed redundant `Surface` wrapper around `Scaffold` (M3 Scaffold already provides `containerColor`).
+3. `MainActivity.kt` — sorted imports into proper package grouping.
+
+### Phase 1 Complete
+- **Mode:** Review
+- **Outcome:** complete
+- **Contract changes:** none
+
+Phase 1 delivered the core playback path: NoiseSource → AudioEngine → AudioTrack with Play/Stop Compose UI. 15 unit tests (T1–T7, T6a–h) pass. Manual acceptance M1–M9 verified on Pixel 6 emulator (Android 16.0). 10 decisions closed (D-6–D-15). No architecture drift. No contract changes requiring propagation.
