@@ -1,12 +1,12 @@
 ---
 module: core-playback
-phase: 2
-phase_title: Color Engine
-step: complete
-mode: Done
+phase: 3
+phase_title: Productization
+step: 2 of 6
+mode: Code
 blocked: null
 regime: Build
-review_done: true
+review_done: false
 ---
 
 # Noise Machine — Development Plan
@@ -45,8 +45,8 @@ review_done: true
 
 ## Current Status
 
-- **Phase** — 2: Color Engine (complete, awaiting commit)
-- **Focus** — Phase completion protocol
+- **Phase** — 3: Productization
+- **Focus** — Step 3.2: PlaybackState expansion + ViewModel fade orchestration
 - **Blocked/Broken** — None
 
 ## Phase 1: Core Playback — Complete
@@ -56,3 +56,71 @@ review_done: true
 ## Phase 2: Color Engine — Complete
 
 7 steps, 23 unit tests (T8–T20 + variants), M10–M20 manual verification passed. 5 decisions closed (D-16–D-20). Known issue: IIR denormal stall after ~10–15 min on emulator (deferred to Phase 4). See DEVLOG.md §Phase 2.
+
+## Phase 3: Productization
+
+**Regime:** Build
+**Scope:** Timer, fade-in/fade-out, Settings skeleton, persistence.
+
+**Known tension:** Without a foreground service (Phase 4), the timer cannot survive Activity stop (screen-off, Home press). Phase 3 delivers the timer logic; Phase 4 makes it survive backgrounding.
+
+### Steps
+
+| Step | Scope | Tests |
+|------|-------|-------|
+| **3.1** | Master gain smoother in AudioEngine + `PlaybackController.setGain()` + render-loop gain multiply | T21, T22 |
+| **3.2** | PlaybackState expansion (FadingIn/FadingOut) + ViewModel fade-in on play, fade-out on stop | T23, T24, T25 |
+| **3.3** | TimerState + countdown coroutine + timer→fade-out integration | T26, T27, T28 |
+| **3.4** | Persistence via DataStore (Color + timer duration) | T29, T30 |
+| **3.5** | Settings screen (fade duration controls) + timer chip on main screen + navigation | T31 |
+| **3.6** | End-to-end wiring + manual on-device verification | M21–M30 |
+
+### Test Spec
+
+**Unit Tests:**
+
+| Test | Verifies |
+|------|----------|
+| **T21** | Gain application: engine at gain=0.5 produces samples at ~half amplitude vs gain=1.0 (via FakeSink capture) |
+| **T22** | Gain ramp convergence: gain smoother reaches target within 1% after 5τ |
+| **T23** | Fade-in state sequence: `onPlayClicked()` → `FadingIn` → `Playing` (FakeController + TestDispatcher) |
+| **T24** | Fade-out state sequence: `onStopClicked()` while Playing → `FadingOut` → `Idle` |
+| **T25** | Fade-out completion: `controller.stop()` called only after gain reaches near-zero threshold (~0.001) |
+| **T26** | Timer countdown: Armed(60000) ticks to Armed(59000) after 1s (TestDispatcher time advancement) |
+| **T27** | Timer expiry: countdown reaches 0 → triggers fade-out → then `controller.stop()` |
+| **T28** | Timer cancel: pressing stop while Armed cancels countdown coroutine, timer resets to Off |
+| **T29** | Persistence: saved Color value restored on fresh ViewModel construction |
+| **T30** | Persistence: saved timer duration restored on fresh ViewModel construction |
+| **T31** | Settings screen build: `assembleDebug` succeeds with Settings composable wired |
+
+**Manual Tests:**
+
+| Test | Verifies |
+|------|----------|
+| **M21** | Play produces audible fade-in (gradual volume increase from silence) |
+| **M22** | Stop produces audible fade-out (gradual decrease, then silence) |
+| **M23** | Timer chip visible on main screen below Play/Stop |
+| **M24** | Timer selection (15m/30m/1h/2h) arms countdown |
+| **M25** | Timer countdown visible in chip (updating text) |
+| **M26** | Timer expiry produces smooth fade-out then silence |
+| **M27** | Color value persists across app kill + relaunch |
+| **M28** | Timer selection persists across app kill + relaunch |
+| **M29** | Settings screen accessible from main screen, shows fade duration options |
+| **M30** | Settings changes (fade durations) take effect on next play/stop |
+
+### Decisions to Queue
+
+| ID | Question | Leaning |
+|----|----------|---------|
+| **D-21** | Fade mechanism: second `ParameterSmoother` for master gain in AudioEngine, applied post-GainSafety? | Yes — reuses proven smoother; gain ≤ 1.0 preserves clip guarantee |
+| **D-22** | Timer architecture: separate `StateFlow<TimerState>` parallel to `PlaybackState`, or merge into one sealed hierarchy? | Separate — avoids state explosion, timer is orthogonal to play/stop |
+| **D-23** | Persistence: `DataStore<Preferences>` vs `SharedPreferences`? | DataStore — modern, coroutine-native, no main-thread risk |
+| **D-24** | Settings navigation: simple `var showSettings` state toggle vs `NavHost`? | State toggle — two screens, no deep linking needed, avoids extra dep |
+| **D-25** | Fade default durations: fade-in 2s, fade-out 5s? | Reasonable defaults; configurable in Settings |
+
+### New Dependencies
+
+| Library | Purpose |
+|---------|---------|
+| `androidx.datastore:datastore-preferences` | Persist Color + timer values |
+| `org.jetbrains.kotlinx:kotlinx-coroutines-test` | Test timer countdown with TestDispatcher |

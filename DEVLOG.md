@@ -302,3 +302,27 @@ Phase 2 delivered the full Color engine: continuous spectral shaping from white 
 - `GainSafety.kt` + `GainSafetyTest.kt`
 - Modified: `AudioEngine.kt`, `PlaybackController.kt`, `PlaybackViewModel.kt`, `MainActivity.kt`
 - Modified tests: `AudioEngineTest.kt`, `PlaybackViewModelTest.kt`
+
+### Phase 3: Productization
+
+### Phase Plan: Productization
+- **Mode:** Discuss
+- **Outcome:** complete
+- **Contract changes:** none
+
+Broke Phase 3 into 6 steps: master gain smoother, fade-in/fade-out orchestration, timer + countdown, persistence, Settings screen + timer chip UI, end-to-end verification. Test spec: T21–T31, M21–M30. Five decisions queued (D-21–D-25).
+
+### Step 1: Master gain smoother in AudioEngine
+- **Mode:** Code
+- **Outcome:** complete — T21, T22 passed. Total test count: 40 (38 Phase 1+2 + 2 new), 0 failures. `testDebugUnitTest` BUILD SUCCESSFUL in 22s.
+- **Contract changes:** `PlaybackController` interface — added `setGain(gain: Float)`. Affects: `AudioEngine` (implements), `PlaybackViewModelTest.FakeController` (implements).
+
+Added master gain support to the audio engine for fade-in/fade-out (D-21):
+
+- `PlaybackController.kt` — added `fun setGain(gain: Float)` to interface.
+- `AudioEngine.kt` — added `fadeTimeSeconds` constructor parameter (default 2.0f), `gainSmoother` ParameterSmoother (initialValue=1.0, reuses proven smoother class), `setGain()` override, and gain multiply in render loop after `GainSafety.process()` and before `floatMonoToInt16Stereo()`. Gain applied post-clip so the GainSafety hard-clip guarantee is preserved (gain ≤ 1.0 only reduces amplitude).
+- `AudioEngineTest.kt` — T21 verifies gain=0.5 produces ~half RMS amplitude vs gain=1.0 (same seed, instant smoother). T22 verifies gain ramp convergence: after setting gain 1→0 with 50ms time constant, tail samples are near-silent (RMS < 100 in Int16 range).
+- `PlaybackViewModelTest.kt` — FakeController updated with `setGain()` recording `lastGain`.
+
+One decision closed:
+- **D-21** — Fade mechanism: second ParameterSmoother for master gain in AudioEngine, applied post-GainSafety. Reuses proven smoother; gain ≤ 1.0 preserves clip guarantee.

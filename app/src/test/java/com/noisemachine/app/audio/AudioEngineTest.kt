@@ -198,4 +198,135 @@ class AudioEngineTest {
             )
         }
     }
+
+    /**
+     * T21 — gain application: engine at gain=0.5 produces samples at
+     * approximately half amplitude vs gain=1.0.
+     *
+     * Uses instant gain smoother (fadeTimeSeconds=0) so gain takes effect
+     * immediately. Compares RMS of captured Int16 stereo samples between
+     * two runs with the same NoiseSource seed.
+     */
+    @Test(timeout = 10_000)
+    fun gain_halves_output_amplitude() {
+        val seed = 0x6A1A01L
+
+        fun measureRms(gain: Float): Double {
+            val sumSquares = AtomicLong(0)
+            val sampleCount = AtomicLong(0)
+            val capturedFrames = AtomicLong(0)
+
+            val sink = object : AudioSink {
+                override fun open(sampleRateHz: Int, channels: Int): Int = 256
+                override fun write(buffer: ShortArray, frames: Int) {
+                    var ss = 0L
+                    for (i in 0 until frames * 2) {
+                        val v = buffer[i].toLong()
+                        ss += v * v
+                    }
+                    sumSquares.addAndGet(ss)
+                    sampleCount.addAndGet((frames * 2).toLong())
+                    capturedFrames.addAndGet(frames.toLong())
+                }
+                override fun close() {}
+            }
+
+            val engine = AudioEngine(
+                sinkFactory = { sink },
+                noiseFactory = { NoiseSource(seed = seed) },
+                fadeTimeSeconds = 0f, // instant — no ramp
+            )
+            engine.setGain(gain)
+            engine.start()
+
+            val deadline = System.nanoTime() + 500_000_000L
+            while (capturedFrames.get() < 4096 && System.nanoTime() < deadline) {
+                Thread.sleep(1)
+            }
+            engine.stop()
+
+            assertTrue("should have captured frames", sampleCount.get() > 0)
+            return kotlin.math.sqrt(sumSquares.get().toDouble() / sampleCount.get())
+        }
+
+        val rmsFull = measureRms(1.0f)
+        val rmsHalf = measureRms(0.5f)
+
+        assertTrue("rmsFull ($rmsFull) should be positive", rmsFull > 0)
+        assertTrue("rmsHalf ($rmsHalf) should be positive", rmsHalf > 0)
+
+        val ratio = rmsHalf / rmsFull
+        assertTrue(
+            "gain=0.5 should produce ~half amplitude; ratio=$ratio (expected 0.35–0.65)",
+            ratio in 0.35..0.65,
+        )
+    }
+
+    /**
+     * T22 — gain ramp convergence: after setting gain from 1.0 to 0.0,
+     * output converges to near-silence within 5 time constants.
+     *
+     * Uses a 50ms time constant (5τ = 250ms). Lets the engine run for 500ms
+     * (2× convergence window) then checks that late-captured samples are
+     * near zero.
+     */
+    @Test(timeout = 10_000)
+    fun gain_ramp_converges_to_target() {
+        // Capture RMS of the last N frames only (tail of the run).
+        val tailSumSquares = AtomicLong(0)
+        val tailSampleCount = AtomicLong(0)
+        val totalFrames = AtomicLong(0)
+
+        // We want to measure only the tail after convergence. At 44100 Hz
+        // with 256-frame buffers, 500ms ≈ 86 buffers ≈ 22016 frames.
+        // We'll start measuring after 16000 frames (≈363ms, well past 5τ=250ms).
+        val measureAfterFrames = 16_000L
+
+        val sink = object : AudioSink {
+            override fun open(sampleRateHz: Int, channels: Int): Int = 256
+            override fun write(buffer: ShortArray, frames: Int) {
+                val prevTotal = totalFrames.getAndAdd(frames.toLong())
+                if (prevTotal >= measureAfterFrames) {
+                    var ss = 0L
+                    for (i in 0 until frames * 2) {
+                        val v = buffer[i].toLong()
+                        ss += v * v
+                    }
+                    tailSumSquares.addAndGet(ss)
+                    tailSampleCount.addAndGet((frames * 2).toLong())
+                }
+            }
+            override fun close() {}
+        }
+
+        val engine = AudioEngine(
+            sinkFactory = { sink },
+            noiseFactory = { NoiseSource(seed = 0x6A1A02L) },
+            fadeTimeSeconds = 0.05f, // 50ms time constant
+        )
+
+        // Start at default gain=1.0, then immediately ramp to 0.
+        engine.start()
+        engine.setGain(0f)
+
+        // Wait for convergence (500ms > 5τ=250ms).
+        val deadline = System.nanoTime() + 600_000_000L
+        while (totalFrames.get() < 22_000 && System.nanoTime() < deadline) {
+            Thread.sleep(1)
+        }
+        engine.stop()
+
+        assertTrue("should have tail samples", tailSampleCount.get() > 0)
+
+        val tailRms = kotlin.math.sqrt(
+            tailSumSquares.get().toDouble() / tailSampleCount.get()
+        )
+
+        // After convergence, gain should be ~0 so RMS should be very small.
+        // Int16 range is [-32768, 32767]; an RMS < 100 means effectively silent.
+        assertTrue(
+            "tail RMS ($tailRms) should be near zero after gain converged to 0",
+            tailRms < 100.0,
+        )
+    }
 }

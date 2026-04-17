@@ -16,4 +16,5 @@ interface PlaybackController {
     fun start()
     fun stop()
     fun setColor(color: Float)
+    fun setGain(gain: Float)
 }

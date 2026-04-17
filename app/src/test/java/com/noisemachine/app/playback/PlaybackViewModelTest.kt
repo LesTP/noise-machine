@@ -47,6 +47,11 @@ class PlaybackViewModelTest {
         override fun setColor(color: Float) {
             lastColor = color
         }
+
+        @Volatile var lastGain: Float = 1f
+        override fun setGain(gain: Float) {
+            lastGain = gain
+        }
     }
 
     /** T6a — initial state is Idle and the controller is untouched. */

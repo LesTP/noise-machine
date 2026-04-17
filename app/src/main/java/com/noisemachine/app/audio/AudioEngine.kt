@@ -43,6 +43,7 @@ class AudioEngine(
     private val sinkFactory: () -> AudioSink,
     private val noiseFactory: () -> NoiseSource = { NoiseSource() },
     private val sampleRateHz: Int = 44_100,
+    private val fadeTimeSeconds: Float = 2.0f,
 ) : PlaybackController {
 
     private val lock = ReentrantLock()
@@ -59,6 +60,13 @@ class AudioEngine(
         timeSeconds = 0.05f,
     )
 
+    /** Smoothed master gain for fade-in/fade-out (D-21). UI thread writes target; render thread reads. */
+    private val gainSmoother = ParameterSmoother(
+        initialValue = 1f,
+        sampleRate = sampleRateHz,
+        timeSeconds = fadeTimeSeconds,
+    )
+
     override val isPlaying: Boolean
         get() = running
 
@@ -70,6 +78,16 @@ class AudioEngine(
      */
     override fun setColor(color: Float) {
         colorSmoother.setTarget(color.coerceIn(0f, 1f))
+    }
+
+    /**
+     * Set the master gain for fade-in/fade-out. Safe to call from any thread.
+     * The value is smoothed by [ParameterSmoother] on the render thread.
+     *
+     * @param gain master gain in [0.0, 1.0]; 0 = silent, 1 = full volume
+     */
+    override fun setGain(gain: Float) {
+        gainSmoother.setTarget(gain.coerceIn(0f, 1f))
     }
 
     /**
@@ -135,6 +153,16 @@ class AudioEngine(
                 noise.fill(monoBuf, framesPerWrite)
                 shaper.process(monoBuf, framesPerWrite, color)
                 safety.process(monoBuf, framesPerWrite, color)
+
+                // Apply master gain (fade-in/fade-out). Post-GainSafety so
+                // the hard-clip guarantee is preserved (gain ≤ 1.0).
+                val gain = gainSmoother.nextBlock(framesPerWrite)
+                var g = 0
+                while (g < framesPerWrite) {
+                    monoBuf[g] *= gain
+                    g++
+                }
+
                 floatMonoToInt16Stereo(monoBuf, stereoBuf, framesPerWrite)
                 sink.write(stereoBuf, framesPerWrite)
             }
