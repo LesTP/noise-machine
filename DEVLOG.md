@@ -208,3 +208,20 @@ Tests use the same band-energy comparison approach as BiquadTest. T14 verifies C
 Two decisions closed:
 - **D-16** — IIR cascade topology: 2 biquad sections (low-shelf + high-shelf) with Color-driven gains. Simpler than a multi-stage cascade and sufficient for a convincing white-to-brown continuum. More sections can be added if perceptual tuning (Step 7) reveals gaps.
 - **D-20** — Color → coefficient mapping: linear-in-dB mapping. Low shelf: `gainDb = color * 10`. High shelf: `gainDb = color * -14`. Asymmetric (more high-cut than low-boost) to prevent boominess at the dark end. Initial curve subject to perceptual refinement in Step 7.
+
+### Step 4: GainSafety
+- **Mode:** Code
+- **Outcome:** complete — T17, T17b, T18, T18b, T18c, T18d passed (6 tests). Total test count: 37 (15 Phase 1 + 6 ParameterSmoother + 5 Biquad + 5 SpectralShaper + 6 GainSafety), 0 failures. `testDebugUnitTest` BUILD SUCCESSFUL.
+- **Contract changes:** none
+
+Implemented `app/src/main/java/com/noisemachine/app/audio/GainSafety.kt` — output safety stage that sits after SpectralShaper in the render pipeline. Three stages applied in order:
+
+1. **DC blocker** — first-order high-pass at ~20 Hz via leaky integrator subtraction (`y[n] = x[n] - dc_avg[n]`). Removes any DC offset introduced by the shelving filters at the dark end of the Color range. Uses a bilinear-approximated alpha coefficient.
+2. **Gain compensation** — piecewise-linear 3-point curve indexed by Color: 0.85 at Color=0 (white noise sounds louder due to full HF energy), 0.95 at Color=0.5 (pink-ish, near unity), 0.60 at Color=1.0 (compensates for low-shelf energy boost). Keeps perceived loudness approximately constant across the Color range.
+3. **Hard clip** — clamps every sample to [-1.0, 1.0] as a final safety net before Int16 conversion.
+
+Tests verify clamping of extreme inputs (T17), bounded output through the full SpectralShaper→GainSafety pipeline across all Color values (T17b), DC offset removal on a constant signal (T18), gain reduction at Color=0 (T18b), gain curve continuity at the segment boundary (T18c), and allocation freedom (T18d).
+
+Two decisions closed:
+- **D-17** — Low-end containment: DC blocker (first-order HPF ~20 Hz) in GainSafety via leaky integrator subtraction. Chosen over explicit DC-blocker biquad for simplicity — only one state variable needed, and the cutoff is low enough that the approximation is adequate.
+- **D-19** — Gain compensation: static piecewise-linear curve indexed by Color, 3 anchor points. Chosen over dynamic RMS measurement for predictability and zero latency. Values are initial estimates; perceptual tuning in Step 7 may adjust the anchors.
