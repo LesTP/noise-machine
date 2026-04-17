@@ -68,6 +68,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.noisemachine.app.playback.PlaybackState
 import com.noisemachine.app.playback.PlaybackViewModel
+import com.noisemachine.app.playback.TimerController
 import com.noisemachine.app.playback.TimerState
 import kotlinx.coroutines.delay
 
@@ -102,12 +103,13 @@ class MainActivity : ComponentActivity() {
     private var bound = false
 
     /** Compose-observable state so the UI recomposes once the service is bound. */
-    private val serviceState = mutableStateOf<PlaybackController?>(null)
+    private val serviceState = mutableStateOf<PlaybackService?>(null)
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-            playbackService = (binder as PlaybackService.LocalBinder).getService()
-            serviceState.value = playbackService
+            val service = (binder as PlaybackService.LocalBinder).getService()
+            playbackService = service
+            serviceState.value = service
             bound = true
         }
 
@@ -131,9 +133,9 @@ class MainActivity : ComponentActivity() {
         )
 
         setContent {
-            val controller by serviceState
-            if (controller != null) {
-                NoiseMachineApp(controller = controller!!)
+            val service by serviceState
+            if (service != null) {
+                NoiseMachineApp(controller = service!!, timerController = service!!)
             }
         }
     }
@@ -150,10 +152,12 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun NoiseMachineApp(
     controller: PlaybackController,
+    timerController: TimerController,
     viewModel: PlaybackViewModel = viewModel(
         factory = PlaybackViewModel.Factory(
             controller = controller,
             appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext,
+            timerController = timerController,
         ),
     ),
 ) {

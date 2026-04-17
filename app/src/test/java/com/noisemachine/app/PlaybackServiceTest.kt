@@ -2,10 +2,17 @@ package com.noisemachine.app
 
 import android.content.Intent
 import com.noisemachine.app.audio.PlaybackController
+import com.noisemachine.app.playback.TimerState
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -18,21 +25,23 @@ import org.robolectric.annotation.Config
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Unit tests for [PlaybackService] covering Phase-4 test spec T32/T33.
+ * Unit tests for [PlaybackService] covering Phase-4 test spec T32/T33/T35.
  *
  * Uses Robolectric to shadow the Android Service lifecycle. The real
  * [AudioEngine] is replaced with a [FakeController] via the service's
  * [PlaybackService.controllerFactory] seam.
  *
- * Step 4.2: Tests exercise the [PlaybackController] interface that the
- * service now implements (binder path), rather than intent-based start.
+ * Step 4.3: Timer tests (T35) inject a [StandardTestDispatcher] via
+ * [PlaybackService.timerDispatcher] to control virtual time.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class PlaybackServiceTest {
 
     private lateinit var fakeController: FakeController
     private lateinit var serviceController: ServiceController<PlaybackService>
+    private val testDispatcher = StandardTestDispatcher()
 
     private class FakeController : PlaybackController {
         val startCalls = AtomicInteger(0)
@@ -60,13 +69,17 @@ class PlaybackServiceTest {
     fun setUp() {
         fakeController = FakeController()
         PlaybackService.controllerFactory = { fakeController }
+        PlaybackService.timerDispatcher = testDispatcher
         serviceController = Robolectric.buildService(PlaybackService::class.java)
     }
 
     @After
     fun tearDown() {
         PlaybackService.controllerFactory = { throw IllegalStateException("not wired") }
+        PlaybackService.timerDispatcher = kotlinx.coroutines.Dispatchers.Main
     }
+
+    // ── T32/T33 — Service lifecycle ──────────────────────────────────
 
     /**
      * T32 — Service starts foreground with notification.
@@ -152,5 +165,116 @@ class PlaybackServiceTest {
 
         assertFalse("Engine must be stopped after ACTION_STOP", service.isPlaying)
         assertEquals(1, fakeController.stopCalls.get())
+    }
+
+    // ── T35 — Timer survives ViewModel clearing ─────────────────────
+
+    /**
+     * T35 — Timer countdown continues when ViewModel is cleared.
+     *
+     * Starts a timer, simulates VM destruction by nulling onTimerExpired,
+     * verifies the countdown is still Armed (running in serviceScope).
+     */
+    @Test
+    fun t35_timer_survives_viewmodel_clearing() = runTest(testDispatcher) {
+        val service = serviceController.create().get()
+        service.start()
+
+        // Start a 60s timer.
+        service.startTimer(60_000)
+        runCurrent()
+        assertEquals(TimerState.Armed(60_000), service.timerState.value)
+
+        // Simulate VM destruction — clear the callback.
+        service.onTimerExpired = null
+
+        // Advance 2s — timer must still be ticking.
+        advanceTimeBy(2_000)
+        runCurrent()
+        assertEquals(TimerState.Armed(58_000), service.timerState.value)
+    }
+
+    /** Timer countdown ticks each second. */
+    @Test
+    fun timer_countdown_ticks() = runTest(testDispatcher) {
+        val service = serviceController.create().get()
+
+        service.startTimer(5_000)
+        runCurrent()
+        assertEquals(TimerState.Armed(5_000), service.timerState.value)
+
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertEquals(TimerState.Armed(4_000), service.timerState.value)
+
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertEquals(TimerState.Armed(3_000), service.timerState.value)
+    }
+
+    /** Timer expiry invokes onTimerExpired callback. */
+    @Test
+    fun timer_expiry_calls_callback() = runTest(testDispatcher) {
+        val service = serviceController.create().get()
+        service.start()
+
+        var callbackInvoked = false
+        service.onTimerExpired = { callbackInvoked = true }
+
+        service.startTimer(3_000)
+        advanceTimeBy(3_000)
+        runCurrent()
+
+        assertTrue("onTimerExpired must be called on expiry", callbackInvoked)
+        assertSame(TimerState.Off, service.timerState.value)
+    }
+
+    /** Timer expiry falls back to stop() when no callback is set. */
+    @Test
+    fun timer_expiry_falls_back_to_stop() = runTest(testDispatcher) {
+        val service = serviceController.create().get()
+        service.start()
+        assertTrue(service.isPlaying)
+
+        service.onTimerExpired = null
+        service.startTimer(3_000)
+        advanceTimeBy(3_000)
+        runCurrent()
+
+        assertSame(TimerState.Off, service.timerState.value)
+        assertFalse("Engine must be stopped on timer expiry fallback", fakeController.isPlaying)
+    }
+
+    /** cancelTimer() stops the countdown. */
+    @Test
+    fun cancel_timer_stops_countdown() = runTest(testDispatcher) {
+        val service = serviceController.create().get()
+
+        service.startTimer(10_000)
+        advanceTimeBy(2_000)
+        runCurrent()
+        assertEquals(TimerState.Armed(8_000), service.timerState.value)
+
+        service.cancelTimer()
+        assertSame(TimerState.Off, service.timerState.value)
+
+        // Further time advancement must not re-arm.
+        advanceTimeBy(10_000)
+        runCurrent()
+        assertSame(TimerState.Off, service.timerState.value)
+    }
+
+    /** stop() also cancels any running timer. */
+    @Test
+    fun stop_cancels_timer() = runTest(testDispatcher) {
+        val service = serviceController.create().get()
+        service.start()
+
+        service.startTimer(60_000)
+        runCurrent()
+        assertEquals(TimerState.Armed(60_000), service.timerState.value)
+
+        service.stop()
+        assertSame(TimerState.Off, service.timerState.value)
     }
 }

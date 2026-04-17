@@ -3,6 +3,8 @@ package com.noisemachine.app.playback
 import com.noisemachine.app.audio.PlaybackController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
@@ -11,14 +13,17 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Unit tests for [PlaybackViewModel] covering Phase-1 test spec T6/T6a..T6h
- * and Phase-3 fade tests T23/T24/T25.
+ * Unit tests for [PlaybackViewModel] covering Phase-1 test spec T6/T6a..T6h,
+ * Phase-3 fade tests T23/T24/T25, and Phase-4 timer delegation T26/T27/T28.
  *
  * Tests use a [FakeController] in place of `AudioEngine` so the ViewModel's
  * state-machine and idempotency contracts are validated independently of the
@@ -26,6 +31,9 @@ import java.util.concurrent.atomic.AtomicInteger
  *
  * Phase-1 tests use default `fadeInMs=0, fadeOutMs=0` so behavior is immediate
  * and unchanged. Phase-3 fade tests use non-zero durations with [StandardTestDispatcher].
+ *
+ * Phase-4 timer tests use [FakeTimerController] to verify the VM delegates
+ * timer operations correctly.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlaybackViewModelTest {
@@ -83,6 +91,37 @@ class PlaybackViewModelTest {
         @Volatile var lastSnapGain: Float = 1f
         override fun snapGain(gain: Float) {
             lastSnapGain = gain
+        }
+    }
+
+    /**
+     * Fake [TimerController] that records calls and exposes a mutable
+     * [timerState] for test control.
+     */
+    private class FakeTimerController : TimerController {
+        private val _timerState = MutableStateFlow<TimerState>(TimerState.Off)
+        override val timerState: StateFlow<TimerState> = _timerState
+
+        override var onTimerExpired: (() -> Unit)? = null
+
+        val startTimerCalls = mutableListOf<Long>()
+        var cancelTimerCalls = 0
+            private set
+
+        override fun startTimer(durationMs: Long) {
+            startTimerCalls.add(durationMs)
+            _timerState.value = TimerState.Armed(durationMs)
+        }
+
+        override fun cancelTimer() {
+            cancelTimerCalls++
+            _timerState.value = TimerState.Off
+        }
+
+        /** Simulate timer reaching zero — invoke the callback. */
+        fun simulateExpiry() {
+            _timerState.value = TimerState.Off
+            onTimerExpired?.invoke()
         }
     }
 
@@ -343,102 +382,104 @@ class PlaybackViewModelTest {
         assertEquals(1f, controller.lastSnapGain, 0.001f)
     }
 
-    // ── Phase 3 timer tests ─────────────────────────────────────────
+    // ── Phase 4 timer delegation tests ──────────────────────────────
 
     /**
-     * T26 — Timer pre-selected while idle starts on play.
+     * T26 — Timer pre-selected while idle delegates startTimer on play.
      *
-     * Verifies that onTimerSelected while idle does NOT start the countdown,
-     * but pressing play starts it, and each 1 s tick decrements remainingMs.
+     * Verifies that onTimerSelected while idle stores the duration,
+     * and onPlayClicked calls timerController.startTimer() with that duration.
+     * Timer state is observed from the controller.
      */
     @Test
-    fun timer_preselected_starts_on_play() = runTest(testDispatcher) {
+    fun t26_timer_preselected_delegates_start_on_play() = runTest(testDispatcher) {
         val controller = FakeController()
-        val vm = PlaybackViewModel(controller, fadeInMs = 0, fadeOutMs = 0)
+        val timerCtrl = FakeTimerController()
+        val vm = PlaybackViewModel(controller, fadeInMs = 0, fadeOutMs = 0, timerController = timerCtrl)
 
-        // Select timer while idle — no countdown starts.
+        // Select timer while idle — no startTimer call yet.
         vm.onTimerSelected(60_000)
         runCurrent()
-        assertSame(TimerState.Off, vm.timerState.value)
         assertEquals(60_000L, vm.lastTimerDurationMs)
+        assertEquals(0, timerCtrl.startTimerCalls.size)
 
-        // Start playback — timer starts.
+        // Start playback — timer delegated.
         vm.onPlayClicked()
         runCurrent()
+        assertEquals(1, timerCtrl.startTimerCalls.size)
+        assertEquals(60_000L, timerCtrl.startTimerCalls[0])
+
+        // Timer state flows from controller.
         assertEquals(TimerState.Armed(60_000), vm.timerState.value)
-
-        // Verify ticks.
-        advanceTimeBy(1000)
-        runCurrent()
-        assertEquals(TimerState.Armed(59_000), vm.timerState.value)
-
-        advanceTimeBy(1000)
-        runCurrent()
-        assertEquals(TimerState.Armed(58_000), vm.timerState.value)
     }
 
     /**
-     * T27 — Timer expiry triggers fade-out.
+     * T27 — Timer expiry triggers onStopClicked (fade-out).
      *
-     * Verifies that when the timer reaches 0 it calls onStopClicked(),
-     * which triggers fade-out (FadingOut → Idle).
+     * Verifies that the onTimerExpired callback set by the VM invokes
+     * onStopClicked(), triggering fade-out.
      */
     @Test
-    fun timer_expiry_triggers_fade_out() = runTest(testDispatcher) {
+    fun t27_timer_expiry_triggers_stop() = runTest(testDispatcher) {
         val controller = FakeController()
-        val vm = PlaybackViewModel(controller, fadeInMs = 0, fadeOutMs = 500)
+        val timerCtrl = FakeTimerController()
+        val vm = PlaybackViewModel(controller, fadeInMs = 0, fadeOutMs = 500, timerController = timerCtrl)
 
         vm.onPlayClicked()
         assertSame(PlaybackState.Playing, vm.state.value)
 
-        vm.onTimerSelected(3_000)
-        runCurrent()
+        // Simulate timer expiry via the callback.
+        timerCtrl.simulateExpiry()
 
-        // Advance past the 3 s timer.
-        advanceTimeBy(3_000)
-        runCurrent()
-
-        assertSame(TimerState.Off, vm.timerState.value)
+        // onStopClicked was called → fade-out started.
         assertSame(PlaybackState.FadingOut, vm.state.value)
 
-        // Let the fade-out complete.
+        // Let fade complete.
         advanceTimeBy(500)
         runCurrent()
-
         assertSame(PlaybackState.Idle, vm.state.value)
         assertEquals(1, controller.stopCalls.get())
     }
 
     /**
-     * T28 — Manual stop cancels timer.
+     * T28 — Manual stop delegates cancelTimer to controller.
      *
-     * Verifies that calling onStopClicked() while a timer is armed
-     * cancels the timer and resets it to Off.
+     * Verifies that onStopClicked() calls timerController.cancelTimer().
      */
     @Test
-    fun manual_stop_cancels_timer() = runTest(testDispatcher) {
+    fun t28_manual_stop_cancels_timer() = runTest(testDispatcher) {
         val controller = FakeController()
-        val vm = PlaybackViewModel(controller, fadeInMs = 0, fadeOutMs = 0)
+        val timerCtrl = FakeTimerController()
+        val vm = PlaybackViewModel(controller, fadeInMs = 0, fadeOutMs = 0, timerController = timerCtrl)
 
         vm.onPlayClicked()
         assertSame(PlaybackState.Playing, vm.state.value)
 
         vm.onTimerSelected(60_000)
         runCurrent()
-
-        advanceTimeBy(2_000)
-        runCurrent()
-        assertEquals(TimerState.Armed(58_000), vm.timerState.value)
+        assertEquals(TimerState.Armed(60_000), vm.timerState.value)
 
         vm.onStopClicked()
 
+        // cancelTimer must have been called (once from onTimerSelected's cancel + once from onStopClicked).
+        assertTrue("cancelTimer must be called on stop", timerCtrl.cancelTimerCalls >= 1)
         assertSame(TimerState.Off, vm.timerState.value)
         assertSame(PlaybackState.Idle, vm.state.value)
+    }
 
-        // Advance well past the original timer — it must not re-arm or tick.
-        advanceTimeBy(60_000)
-        runCurrent()
-        assertSame(TimerState.Off, vm.timerState.value)
+    /** onCleared nulls out the onTimerExpired callback. */
+    @Test
+    fun on_cleared_nulls_timer_expired_callback() {
+        val controller = FakeController()
+        val timerCtrl = FakeTimerController()
+        val vm = PlaybackViewModel(controller, timerController = timerCtrl)
+
+        // init sets the callback.
+        assertNotNull(timerCtrl.onTimerExpired)
+
+        vm.onCleared()
+
+        assertNull("onTimerExpired must be null after onCleared", timerCtrl.onTimerExpired)
     }
 
     // ── Phase 3 persistence tests ───────────────────────────────────
