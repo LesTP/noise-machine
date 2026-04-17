@@ -193,3 +193,18 @@ Coefficient formulas follow the Audio EQ Cookbook (Robert Bristow-Johnson). Para
 Tests in `app/src/test/java/com/noisemachine/app/audio/BiquadTest.kt` use a band-energy comparison approach — feeding seeded white noise through the filter and comparing low-band vs high-band RMS energy via moving-average decomposition (avoids FFT dependency). T11 verifies low-shelf boost increases the low/high energy ratio by ≥50%. T12 verifies high-shelf cut has the same effect. T12b confirms passthrough is bit-exact identity. T13 is the standard heap-delta allocation test. T13b runs 5 seconds of filtered noise and asserts all samples are finite and bounded within ±10.0.
 
 No decisions closed in this step; D-16 (IIR topology) remains open until SpectralShaper chooses how many biquads to cascade and how to map Color to their parameters.
+
+### Step 3: SpectralShaper
+- **Mode:** Code
+- **Outcome:** complete — T14, T15, T15b, T16, T16b passed (5 tests). Total test count: 31 (15 Phase 1 + 6 ParameterSmoother + 5 Biquad + 5 SpectralShaper), 0 failures. `testDebugUnitTest` BUILD SUCCESSFUL.
+- **Contract changes:** none
+
+Implemented `app/src/main/java/com/noisemachine/app/audio/SpectralShaper.kt` — the core DSP stage that maps Color [0.0, 1.0] to spectral tilt using two cascaded biquad shelving filters. Topology: low-shelf at 250 Hz (0 → +10 dB) + high-shelf at 2500 Hz (0 → -14 dB), both scaling linearly with Color. At Color ≈ 0 the shaper is passthrough (flat/white); at Color = 1.0 the coordinated shelf gains produce a brown-like tilt. Coefficients are recalculated only when Color changes (once per buffer at most), keeping the per-sample inner loop allocation-free.
+
+Modified `Biquad.kt` — added `configureLowShelf()` and `configureHighShelf()` instance methods that recalculate coefficients in-place without allocating a new Biquad. Refactored companion factories (`lowShelf`, `highShelf`) to delegate to these methods, eliminating code duplication. This was necessary so SpectralShaper can update filter parameters during playback without allocation.
+
+Tests use the same band-energy comparison approach as BiquadTest. T14 verifies Color=0 preserves the flat spectrum (within 20% of unfiltered ratio). T15 verifies Color=1 tilts the low/high ratio by at least 2×. T15b confirms Color=0.5 produces an intermediate tilt between the two extremes — verifying monotonicity of the mapping.
+
+Two decisions closed:
+- **D-16** — IIR cascade topology: 2 biquad sections (low-shelf + high-shelf) with Color-driven gains. Simpler than a multi-stage cascade and sufficient for a convincing white-to-brown continuum. More sections can be added if perceptual tuning (Step 7) reveals gaps.
+- **D-20** — Color → coefficient mapping: linear-in-dB mapping. Low shelf: `gainDb = color * 10`. High shelf: `gainDb = color * -14`. Asymmetric (more high-cut than low-boost) to prevent boominess at the dark end. Initial curve subject to perceptual refinement in Step 7.

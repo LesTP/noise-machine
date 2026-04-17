@@ -2,7 +2,7 @@
 module: core-playback
 phase: 2
 phase_title: Color Engine
-step: 3 of 7
+step: 4 of 7
 mode: Code
 blocked: null
 regime: Build
@@ -43,7 +43,7 @@ review_done: false
 ## Current Status
 
 - **Phase** — 2: Color Engine
-- **Focus** — Step 3: SpectralShaper (cascaded biquad chain driven by Color)
+- **Focus** — Step 4: GainSafety (DC blocker + output normalization + clipping)
 - **Blocked/Broken** — None
 
 ## Phase 1: Core Playback — Complete
@@ -60,7 +60,7 @@ review_done: false
 
 1. [x] **ParameterSmoother** — Lock-free exponential ramp for real-time parameter smoothing. *(done 2026-04-17; T8/T8b/T8c/T9/T10/T10b passed; D-18 closed)*
 2. [x] **Biquad** — Generic second-order IIR filter (Direct Form II Transposed). *(done 2026-04-17; T11/T12/T12b/T13/T13b passed)*
-3. [ ] **SpectralShaper** — Cascaded biquad chain driven by Color [0,1]. Maps Color to coordinated filter parameters (spectral tilt, HF attenuation, LF shaping). Processes mono buffer in-place. Initial coefficient curve; final tuning in Step 7.
+3. [x] **SpectralShaper** — Cascaded biquad chain driven by Color [0,1]. *(done 2026-04-17; T14/T15/T15b/T16/T16b passed; D-16, D-20 closed)*
 4. [ ] **GainSafety** — DC blocker (1st-order HPF ~20 Hz) + output normalization across Color range + hard-clip at ±1.0.
 5. [ ] **AudioEngine integration** — Wire ParameterSmoother + SpectralShaper + GainSafety into render loop. Add `setColor(Float)` to PlaybackController. Extend engine to accept color changes during playback.
 6. [ ] **Color slider UI** — Compose Slider on main screen (center zone). Wire Slider → ViewModel → PlaybackController.setColor(). Interactive in both Idle and Playing states.
@@ -86,11 +86,11 @@ review_done: false
 
 ### Decisions to resolve during this phase
 
-- **D-16:** IIR cascade topology — *open; default: 2 biquads (low-shelf + high-shelf), Color-driven gains. Resolve in Step 2–3.*
+- **D-16:** IIR cascade topology — *closed in Step 3: 2 biquads (low-shelf 250 Hz + high-shelf 2500 Hz), Color-driven gains; see DECISIONS.md.*
 - **D-17:** Low-end containment strategy — *open; default: DC blocker (1st-order HPF ~20 Hz) in GainSafety. Resolve in Step 4.*
 - **D-18:** ParameterSmoother algorithm — *closed in Step 1: exponential ramp, `@Volatile` target, 50 ms default time constant; see DECISIONS.md.*
 - **D-19:** Gain compensation approach — *open; default: static Color-indexed compensation curve (lookup + lerp). Resolve in Step 4.*
-- **D-20:** Color → coefficient mapping — *open; default: coordinated shelf gains + cutoff shift; initial curve refined in Step 7. Resolve in Step 3 + 7.*
+- **D-20:** Color → coefficient mapping — *closed in Step 3: linear-in-dB, low shelf 0→+10 dB, high shelf 0→-14 dB; initial curve refined in Step 7.*
 
 ### Refine step (Step 7) structure
 

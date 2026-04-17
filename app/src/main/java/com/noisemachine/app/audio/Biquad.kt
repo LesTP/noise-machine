@@ -15,7 +15,9 @@ import kotlin.math.sqrt
  *
  * Coefficients are stored normalized (a0 = 1): `b0, b1, b2, a1, a2`.
  * Use the companion factory methods ([lowShelf], [highShelf]) to create
- * pre-configured instances.
+ * pre-configured instances, or call the instance [configureLowShelf] /
+ * [configureHighShelf] methods to update coefficients in-place without
+ * allocation (used by [SpectralShaper] during playback).
  *
  * Not thread-safe. Use one instance per audio thread.
  *
@@ -63,6 +65,72 @@ class Biquad private constructor(
     }
 
     /**
+     * Reconfigure as a low-shelf filter in-place. Allocation-free.
+     *
+     * @param sampleRate Hz (e.g. 44100)
+     * @param freqHz shelf transition frequency
+     * @param gainDb boost (positive) or cut (negative) in dB below [freqHz]
+     * @param q shelf slope quality factor (0.707 = Butterworth)
+     */
+    fun configureLowShelf(
+        sampleRate: Int,
+        freqHz: Float,
+        gainDb: Float,
+        q: Float = 0.707f,
+    ) {
+        val a = 10f.pow(gainDb / 40f)
+        val w0 = 2f * PI.toFloat() * freqHz / sampleRate
+        val cosW = cos(w0)
+        val sinW = sin(w0)
+        val alpha = sinW / (2f * q)
+        val twoSqrtAAlpha = 2f * sqrt(a) * alpha
+
+        val a0 = (a + 1f) + (a - 1f) * cosW + twoSqrtAAlpha
+        val invA0 = 1f / a0
+
+        setCoefficients(
+            b0 = (a * ((a + 1f) - (a - 1f) * cosW + twoSqrtAAlpha)) * invA0,
+            b1 = (2f * a * ((a - 1f) - (a + 1f) * cosW)) * invA0,
+            b2 = (a * ((a + 1f) - (a - 1f) * cosW - twoSqrtAAlpha)) * invA0,
+            a1 = (-2f * ((a - 1f) + (a + 1f) * cosW)) * invA0,
+            a2 = ((a + 1f) + (a - 1f) * cosW - twoSqrtAAlpha) * invA0,
+        )
+    }
+
+    /**
+     * Reconfigure as a high-shelf filter in-place. Allocation-free.
+     *
+     * @param sampleRate Hz (e.g. 44100)
+     * @param freqHz shelf transition frequency
+     * @param gainDb boost (positive) or cut (negative) in dB above [freqHz]
+     * @param q shelf slope quality factor (0.707 = Butterworth)
+     */
+    fun configureHighShelf(
+        sampleRate: Int,
+        freqHz: Float,
+        gainDb: Float,
+        q: Float = 0.707f,
+    ) {
+        val a = 10f.pow(gainDb / 40f)
+        val w0 = 2f * PI.toFloat() * freqHz / sampleRate
+        val cosW = cos(w0)
+        val sinW = sin(w0)
+        val alpha = sinW / (2f * q)
+        val twoSqrtAAlpha = 2f * sqrt(a) * alpha
+
+        val a0 = (a + 1f) - (a - 1f) * cosW + twoSqrtAAlpha
+        val invA0 = 1f / a0
+
+        setCoefficients(
+            b0 = (a * ((a + 1f) + (a - 1f) * cosW + twoSqrtAAlpha)) * invA0,
+            b1 = (-2f * a * ((a - 1f) + (a + 1f) * cosW)) * invA0,
+            b2 = (a * ((a + 1f) + (a - 1f) * cosW - twoSqrtAAlpha)) * invA0,
+            a1 = (2f * ((a - 1f) - (a + 1f) * cosW)) * invA0,
+            a2 = ((a + 1f) - (a - 1f) * cosW - twoSqrtAAlpha) * invA0,
+        )
+    }
+
+    /**
      * Reset filter state to zero (silence). Use when starting a new
      * playback session to avoid transient pops from stale state.
      */
@@ -73,69 +141,23 @@ class Biquad private constructor(
     companion object {
         /**
          * Create a low-shelf biquad.
-         *
-         * @param sampleRate Hz (e.g. 44100)
-         * @param freqHz shelf transition frequency
-         * @param gainDb boost (positive) or cut (negative) in dB below [freqHz]
-         * @param q shelf slope quality factor (0.707 = Butterworth)
          */
         fun lowShelf(
             sampleRate: Int,
             freqHz: Float,
             gainDb: Float,
             q: Float = 0.707f,
-        ): Biquad {
-            val a = 10f.pow(gainDb / 40f) // sqrt of linear gain
-            val w0 = 2f * PI.toFloat() * freqHz / sampleRate
-            val cosW = cos(w0)
-            val sinW = sin(w0)
-            val alpha = sinW / (2f * q)
-            val twoSqrtAAlpha = 2f * sqrt(a) * alpha
-
-            val a0 = (a + 1f) + (a - 1f) * cosW + twoSqrtAAlpha
-            val invA0 = 1f / a0
-
-            return Biquad(
-                b0 = (a * ((a + 1f) - (a - 1f) * cosW + twoSqrtAAlpha)) * invA0,
-                b1 = (2f * a * ((a - 1f) - (a + 1f) * cosW)) * invA0,
-                b2 = (a * ((a + 1f) - (a - 1f) * cosW - twoSqrtAAlpha)) * invA0,
-                a1 = (-2f * ((a - 1f) + (a + 1f) * cosW)) * invA0,
-                a2 = ((a + 1f) + (a - 1f) * cosW - twoSqrtAAlpha) * invA0,
-            )
-        }
+        ): Biquad = passthrough().apply { configureLowShelf(sampleRate, freqHz, gainDb, q) }
 
         /**
          * Create a high-shelf biquad.
-         *
-         * @param sampleRate Hz (e.g. 44100)
-         * @param freqHz shelf transition frequency
-         * @param gainDb boost (positive) or cut (negative) in dB above [freqHz]
-         * @param q shelf slope quality factor (0.707 = Butterworth)
          */
         fun highShelf(
             sampleRate: Int,
             freqHz: Float,
             gainDb: Float,
             q: Float = 0.707f,
-        ): Biquad {
-            val a = 10f.pow(gainDb / 40f)
-            val w0 = 2f * PI.toFloat() * freqHz / sampleRate
-            val cosW = cos(w0)
-            val sinW = sin(w0)
-            val alpha = sinW / (2f * q)
-            val twoSqrtAAlpha = 2f * sqrt(a) * alpha
-
-            val a0 = (a + 1f) - (a - 1f) * cosW + twoSqrtAAlpha
-            val invA0 = 1f / a0
-
-            return Biquad(
-                b0 = (a * ((a + 1f) + (a - 1f) * cosW + twoSqrtAAlpha)) * invA0,
-                b1 = (-2f * a * ((a - 1f) + (a + 1f) * cosW)) * invA0,
-                b2 = (a * ((a + 1f) + (a - 1f) * cosW - twoSqrtAAlpha)) * invA0,
-                a1 = (2f * ((a - 1f) - (a + 1f) * cosW)) * invA0,
-                a2 = ((a + 1f) - (a - 1f) * cosW - twoSqrtAAlpha) * invA0,
-            )
-        }
+        ): Biquad = passthrough().apply { configureHighShelf(sampleRate, freqHz, gainDb, q) }
 
         /**
          * Create a pass-through (unity) biquad. Useful as a default or
