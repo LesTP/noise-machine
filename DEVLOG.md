@@ -122,3 +122,23 @@ Type 'androidx.compose.runtime.State<…>' has no method 'getValue(Nothing?, KPr
 on the `val state by viewModel.state.collectAsStateWithLifecycle()` line. Root cause: `androidx.compose.runtime.getValue` is an extension operator, not part of the `State<T>` API surface, and is *not* re-exported by `collectAsStateWithLifecycle`. Adding `import androidx.compose.runtime.getValue` resolved it. Promoted to a DEVPLAN gotcha.
 
 Manual on-device verification of audible noise still belongs to Step 5 (end-to-end wiring). The Compose UI compiles, `assembleDebug` produces a working APK, and the ViewModel's lifecycle is fully covered by JVM tests — but actually hearing the white noise on hardware is the real Phase-1 milestone and the right place for that is Step 5's smoke pass.
+
+### Step 5: End-to-end wiring and on-device verification
+- **Mode:** Code
+- **Outcome:** complete — M1–M9 manual verification passed on Pixel 6 emulator (Android 16.0 x86_64). All 15 unit tests still pass. `assembleDebug` BUILD SUCCESSFUL.
+- **Contract changes:** none
+
+Ran the full manual acceptance suite (M1–M9) on the emulator:
+- **M1** — App installs, launches, header and Play button visible. Pass.
+- **M2** — Initial state silent. Pass.
+- **M3** — Play emits audible broadband white noise; button toggles to Stop. Pass.
+- **M4** — Hardware volume controls affect output on the media stream. Pass.
+- **M5** — Stop returns to silence; button toggles to Play. Pass.
+- **M6** — Rapid toggle ~20× — no crash, no ANR, state consistent at rest. Pass.
+- **M7** — Backgrounding (Home press) stops audio. Pass (after fix).
+- **M8** — Configuration change (rotation) does not crash. Pass.
+- **M9** — Back press stops audio. Pass (after fix).
+
+**Bug found and fixed:** M7 and M9 initially failed — audio continued playing after Home or Back press. Root cause: the ViewModel's `onCleared()` only fires when the Activity is destroyed (which can be delayed), and `onStop()` had no hook to stop playback. Fix: added `LifecycleEventEffect(Lifecycle.Event.ON_STOP)` in the `NoiseMachineApp` composable to call `viewModel.onStopClicked()` when the Activity stops. This is correct Phase 1 behavior — no foreground service yet; Phase 4 will replace this with foreground-service lifecycle that keeps playback alive in the background.
+
+One benign system warning observed: `AppOps: attributionTag not declared in manifest of com.noisemachine.app` — this is an Android system-level message unrelated to our app, safe to ignore.

@@ -17,6 +17,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -40,6 +42,14 @@ fun NoiseMachineApp(
     viewModel: PlaybackViewModel = viewModel(factory = PlaybackViewModel.Factory()),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+
+    // Phase 1: no foreground service, so stop audio when the Activity stops
+    // (home press, back press, task switch). Phase 4 replaces this with a
+    // foreground-service lifecycle that keeps playback alive in the background.
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
+        viewModel.onStopClicked()
+    }
+
     MaterialTheme {
         Surface(
             modifier = Modifier.fillMaxSize(),

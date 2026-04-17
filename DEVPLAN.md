@@ -3,7 +3,7 @@ module: core-playback
 phase: 1
 phase_title: Core Playback
 step: 5 of 5
-mode: Code
+mode: Review
 blocked: null
 regime: Build
 review_done: false
@@ -42,7 +42,7 @@ review_done: false
 ## Current Status
 
 - **Phase** — 1: Core Playback
-- **Focus** — Step 5: End-to-end wiring and on-device verification (audible noise, manual rapid-toggle smoke)
+- **Focus** — All 5 steps complete; awaiting Phase Review
 - **Blocked/Broken** — None
 
 ## Phase 1: Core Playback
@@ -57,7 +57,7 @@ review_done: false
 2. [x] **NoiseSource** — Allocation-free white-noise sample generator. Unit tests: mean ≈ 0, values in [-1,1], no repeated patterns, correct buffer fill. *(done 2026-04-17; T1, T2, T3 passed)*
 3. [x] **AudioEngine** — Owns AudioTrack instance (16-bit PCM, 44100 Hz, stereo), dedicated render thread, start/stop API. NoiseSource wired in. Manual verification: audible white noise on device/emulator. *(done 2026-04-17; T4 passed via FakeSink, T5 passed via 20× rapid toggle. Audible-on-device verification deferred to Phase 1 close-out / Step 5.)*
 4. [x] **Compose UI + ViewModel** — Main screen with Play/Stop button. PlaybackViewModel exposes PlaybackState (Idle/Playing). Button triggers AudioEngine start/stop through ViewModel. *(done 2026-04-17; T6 + T6a–h passed; assembleDebug passes.)*
-5. [ ] **End-to-end wiring and test** — Full path works: tap Play → ViewModel → AudioEngine → NoiseSource → AudioTrack → audible output. Tap Stop → silence. Unit tests for ViewModel state transitions. Verify no crashes on rapid start/stop.
+5. [x] **End-to-end wiring and test** — Full path works: tap Play → ViewModel → AudioEngine → NoiseSource → AudioTrack → audible output. Tap Stop → silence. Manual M1–M9 verification passed on Pixel 6 emulator (Android 16.0). *(done 2026-04-17; added LifecycleEventEffect(ON_STOP) to fix M7/M9.)*
 
 ### Test Spec
 
