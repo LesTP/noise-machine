@@ -2,8 +2,8 @@
 module: core-playback
 phase: 5
 phase_title: Secondary Polish
-step: 0 of 6
-mode: Discuss
+step: 1 of 6
+mode: Code
 blocked: null
 regime: Build
 review_done: false

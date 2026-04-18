@@ -556,3 +556,16 @@ Features planned:
 Test spec: T38–T48, M41–M55. Five decisions queued (D-31–D-35).
 
 DSP pipeline change: SpectralShaper now receives `color + microDriftOffset`; TextureShaper inserts after SpectralShaper; StereoStage replaces inline `floatMonoToInt16Stereo`. Contract changes expected: `PlaybackController` gains `setTexture`, `setStereoWidth`, `setMicroDriftDepth`; `PrefsStore` gains 5 new fields.
+
+### Step 1: TextureShaper DSP
+- **Mode:** Code
+- **Outcome:** complete — T38, T38b, T39, T39b, T39c, T40, reset test passed (7 tests). Total test count: 85 (78 Phase 1–4 + 7 TextureShaper), 0 failures. `testDebugUnitTest` BUILD SUCCESSFUL.
+- **Contract changes:** none
+
+Implemented `app/src/main/java/com/noisemachine/app/audio/TextureShaper.kt` — variable-rate zero-order hold (sample decimation) for smooth ↔ grainy texture control. At texture=0, passthrough (fast path returns immediately). At texture=1, each sample is held for MAX_HOLD=6 frames (~7350 Hz effective resolution at 44100 Hz). The hold length is `1 + floor(texture * (MAX_HOLD - 1))`, giving a linear mapping from the slider to graininess.
+
+Implementation is allocation-free: two state variables (`heldSample: Float`, `holdCounter: Int`) track the current held value and remaining repeats. The `process()` inner loop is branchless except for the hold-counter check. `reset()` clears state for new playback sessions.
+
+Tests in `TextureShaperTest.kt`: T38 (passthrough at texture=0 — exact match), T38b (passthrough with large noise buffer), T39 (texture=1 repeat rate >50%), T39b (texture=0.5 intermediate stepping), T39c (all output within [-1, 1]), T40 (heap delta < 256 KB after 10M samples), plus a reset edge-case test.
+
+One decision closed: D-31 (Texture DSP approach: zero-order hold, MAX_HOLD=6).

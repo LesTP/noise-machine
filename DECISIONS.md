@@ -193,10 +193,10 @@ Rationale: Without audio focus, other apps' audio can overlap with noise playbac
 Revisit if: users want noise to mix with other audio (would use `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK` instead).
 
 D-31: Texture DSP approach — zero-order hold (sample decimation)
-Date: 2026-04-18 | Status: Open
+Date: 2026-04-18 | Status: Closed
 Priority: Important
-Decision: TextureShaper uses variable-rate zero-order hold. At texture=0, every sample passes through (smooth). At texture=1, each sample is held/repeated for MAX_HOLD frames before advancing (grainy). Inserted between SpectralShaper and GainSafety.
-Rationale: Orthogonal to Color (changes temporal microstructure, not spectral tilt). Very cheap — one counter and one held-sample value, no allocations. Produces a clear, distinctive audible effect that users can perceive on a slider. Alternatives considered: amplitude modulation with slow noise envelope — more organic but overlaps with micro-variation; variable-cutoff LPF — overlaps with Color control; both rejected.
+Decision: TextureShaper uses variable-rate zero-order hold. At texture=0, every sample passes through (smooth). At texture=1, each sample is held/repeated for MAX_HOLD (6) frames before advancing (grainy). Inserted between SpectralShaper and GainSafety.
+Rationale: Orthogonal to Color (changes temporal microstructure, not spectral tilt). Very cheap — one counter and one held-sample value, no allocations. Produces a clear, distinctive audible effect that users can perceive on a slider. At 44100 Hz with MAX_HOLD=6, the effective resolution drops to ~7350 Hz — distinctly grainy without being harsh. Alternatives considered: amplitude modulation with slow noise envelope — more organic but overlaps with micro-variation; variable-cutoff LPF — overlaps with Color control; both rejected.
 Revisit if: perceptual tuning reveals the zero-order hold sounds too "digital" at moderate settings, in which case a first-order interpolated hold or noise-modulated smoothing could soften the effect.
 
 D-32: Stereo decorrelation method — first-order all-pass on R channel
