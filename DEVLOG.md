@@ -569,3 +569,18 @@ Implementation is allocation-free: two state variables (`heldSample: Float`, `ho
 Tests in `TextureShaperTest.kt`: T38 (passthrough at texture=0 — exact match), T38b (passthrough with large noise buffer), T39 (texture=1 repeat rate >50%), T39b (texture=0.5 intermediate stepping), T39c (all output within [-1, 1]), T40 (heap delta < 256 KB after 10M samples), plus a reset edge-case test.
 
 One decision closed: D-31 (Texture DSP approach: zero-order hold, MAX_HOLD=6).
+
+### Step 2: StereoStage DSP
+- **Mode:** Code
+- **Outcome:** complete — T41, T41b, T42, T42b, T42c, T43, T43b, reset test passed (8 tests). Total test count: 93 (85 Phase 1–5.1 + 8 StereoStage), 0 failures. `testDebugUnitTest` BUILD SUCCESSFUL.
+- **Contract changes:** none
+
+Implemented `app/src/main/java/com/noisemachine/app/audio/StereoStage.kt` — first-order all-pass decorrelation for stereo width control. Takes a mono `FloatArray` and produces an interleaved stereo `ShortArray` (Int16 PCM), replacing the inline `floatMonoToInt16Stereo` function in AudioEngine.
+
+At width=0, fast path produces identical L/R channels (D-5 behavior). At width>0, L = mono (direct), R = mono × (1−width) + allpass(mono) × width. The all-pass filter uses coefficient 0.6, placing the 90° phase-shift crossover around 1–2 kHz for broad decorrelation across the audible range. Two state variables (`apX1`, `apY1`) maintain continuity across buffer boundaries.
+
+The `toInt16` companion function replicates the clip-safe conversion from the old `floatMonoToInt16Stereo` — `v >= 1.0f → MAX_VALUE`, `v <= -1.0f → MIN_VALUE`, else `(v * 32767).toShort()`.
+
+Tests: T41 (identical L/R at width=0), T41b (specific conversion values match legacy), T42 (>80% L≠R at width=0.3), T42b (>90% L≠R at width=1.0), T42c (monotonicity: width=1.0 diff > width=0.3 diff), T43 (all output bounded Int16), T43b (heap delta < 256 KB), plus reset edge-case test.
+
+One decision closed: D-32 (Stereo decorrelation: first-order all-pass, coeff=0.6).

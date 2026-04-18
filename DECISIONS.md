@@ -200,7 +200,7 @@ Rationale: Orthogonal to Color (changes temporal microstructure, not spectral ti
 Revisit if: perceptual tuning reveals the zero-order hold sounds too "digital" at moderate settings, in which case a first-order interpolated hold or noise-modulated smoothing could soften the effect.
 
 D-32: Stereo decorrelation method — first-order all-pass on R channel
-Date: 2026-04-18 | Status: Open
+Date: 2026-04-18 | Status: Closed
 Priority: Important
 Decision: StereoStage applies a first-order all-pass filter to the mono signal to produce the R channel. L = mono, R = mono × (1 − width) + allpass(mono) × width. At width=0, identical channels (D-5 behavior). Width range 0.0–0.3 (restrained).
 Rationale: All-pass preserves frequency content (spectral tilt from Color stays consistent between ears), produces natural-sounding width with minimal CPU cost (one state variable). Alternatives considered: second independent NoiseSource — doubles noise generation cost and creates a "two different sounds" feel; delayed copy — comb-filtering at short delays; both rejected.
