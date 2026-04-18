@@ -622,3 +622,22 @@ AudioEngine changes: added `textureSmoother` and `stereoWidthSmoother` (Paramete
 PlaybackService: three new delegate methods forwarding to `engine?.setTexture/setStereoWidth/setMicroDriftDepth`.
 
 No decisions closed in this step (D-34 fade duration configurability is a Step 5 Settings UI concern).
+
+### Step 5: Settings UI + persistence + About + permission
+- **Mode:** Code
+- **Outcome:** complete — T45 passed (assembleDebug compiles), 101 unit tests pass. POST_NOTIFICATIONS wired (T46 = manual verification on API 33+ device).
+- **Contract changes:** `PrefsStore` interface — added `texture: Float`, `stereoEnabled: Boolean`, `microDriftDepth: Float`, `fadeInMs: Long`, `fadeOutMs: Long`. Propagated to `SharedPrefsStore` (production) and `FakePrefsStore` (test). `PlaybackViewModel` — added public methods `onTextureChanged`, `onStereoToggled`, `onMicroDriftDepthChanged`, `onFadeInChanged`, `onFadeOutChanged` and StateFlows `texture`, `stereoEnabled`, `microDriftDepth`, `fadeInMsFlow`, `fadeOutMsFlow`.
+
+Expanded Settings screen with three sections:
+
+**Sound controls:** Texture slider (smooth ↔ grainy, full-width), Micro drift slider (none ↔ max, full-width), Stereo toggle (Switch). Each change immediately forwards to the controller and persists via PrefsStore.
+
+**Timing:** Fade-in and fade-out duration pickers (OutlinedButton + DropdownMenu) with options 0s/1s/2s/5s/10s per D-34. ViewModel `fadeInMs`/`fadeOutMs` are now mutable — read from prefs at init and updated live. Factory reads fade values from prefs instead of using hardcoded defaults.
+
+**About:** Description ("Generates ambient noise to mask distractions and help you sleep. The Color slider shapes the tone from bright (white) through balanced (pink) to deep (brown)."), "Made by The Moving Finger Studios", "In Memoriam Sergei Skarupo, 1973–2021", version string from PackageInfo.
+
+**POST_NOTIFICATIONS (D-35):** `rememberLauncherForActivityResult(RequestPermission)` in NoiseMachineApp. On API 33+, first Play tap checks `checkSelfPermission` and launches the permission dialog if not granted. Denied = playback works, notification invisible.
+
+Settings screen is scrollable (verticalScroll) with dividers between sections. Stereo uses a fixed width of 0.3 when enabled (restrained per D-5).
+
+Two decisions closed: D-34 (fade picker), D-35 (POST_NOTIFICATIONS flow).

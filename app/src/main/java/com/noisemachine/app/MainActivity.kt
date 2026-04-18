@@ -1,13 +1,18 @@
 package com.noisemachine.app
 
+import android.Manifest
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import android.graphics.CornerPathEffect
 import android.graphics.Paint as NativePaint
 import androidx.compose.animation.AnimatedContent
@@ -24,21 +29,31 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -59,8 +74,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -94,6 +112,17 @@ private val timerPresets = listOf(
     TimerPreset("30m", 30 * 60 * 1000L),
     TimerPreset("1h", 60 * 60 * 1000L),
     TimerPreset("2h", 2 * 60 * 60 * 1000L),
+)
+
+// ── Fade duration options (D-34) ─────────────────────────────────
+private data class FadeOption(val label: String, val ms: Long)
+
+private val fadeOptions = listOf(
+    FadeOption("0s", 0L),
+    FadeOption("1s", 1_000L),
+    FadeOption("2s", 2_000L),
+    FadeOption("5s", 5_000L),
+    FadeOption("10s", 10_000L),
 )
 
 class MainActivity : ComponentActivity() {
@@ -154,7 +183,7 @@ fun NoiseMachineApp(
     viewModel: PlaybackViewModel = viewModel(
         factory = PlaybackViewModel.Factory(
             controller = service,
-            appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext,
+            appContext = LocalContext.current.applicationContext,
             timerController = service,
         ),
     ),
@@ -168,12 +197,35 @@ fun NoiseMachineApp(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val color by viewModel.color.collectAsStateWithLifecycle()
     val timerState by viewModel.timerState.collectAsStateWithLifecycle()
+    val texture by viewModel.texture.collectAsStateWithLifecycle()
+    val stereoEnabled by viewModel.stereoEnabled.collectAsStateWithLifecycle()
+    val microDriftDepth by viewModel.microDriftDepth.collectAsStateWithLifecycle()
+    val fadeInMs by viewModel.fadeInMsFlow.collectAsStateWithLifecycle()
+    val fadeOutMs by viewModel.fadeOutMsFlow.collectAsStateWithLifecycle()
+
+    // POST_NOTIFICATIONS permission (API 33+, D-35)
+    val context = LocalContext.current
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { /* granted or denied — playback works either way */ }
 
     var showSettings by rememberSaveable { mutableStateOf(false) }
 
     MaterialTheme(colorScheme = NoiseMachineColors) {
         if (showSettings) {
-            SettingsScreen(onBack = { showSettings = false })
+            SettingsScreen(
+                texture = texture,
+                onTextureChanged = viewModel::onTextureChanged,
+                stereoEnabled = stereoEnabled,
+                onStereoToggled = viewModel::onStereoToggled,
+                microDriftDepth = microDriftDepth,
+                onMicroDriftDepthChanged = viewModel::onMicroDriftDepthChanged,
+                fadeInMs = fadeInMs,
+                onFadeInChanged = viewModel::onFadeInChanged,
+                fadeOutMs = fadeOutMs,
+                onFadeOutChanged = viewModel::onFadeOutChanged,
+                onBack = { showSettings = false },
+            )
         } else {
             MainScreen(
                 state = state,
@@ -182,7 +234,16 @@ fun NoiseMachineApp(
                 initialTimerIndex = timerPresets.indexOfFirst {
                     it.durationMs == viewModel.lastTimerDurationMs
                 }.coerceAtLeast(0),
-                onPlay = viewModel::onPlayClicked,
+                onPlay = {
+                    // Request POST_NOTIFICATIONS on first play (API 33+)
+                    if (Build.VERSION.SDK_INT >= 33) {
+                        val perm = Manifest.permission.POST_NOTIFICATIONS
+                        if (context.checkSelfPermission(perm) != PackageManager.PERMISSION_GRANTED) {
+                            permissionLauncher.launch(perm)
+                        }
+                    }
+                    viewModel.onPlayClicked()
+                },
                 onStop = viewModel::onStopClicked,
                 onColorChanged = viewModel::onColorChanged,
                 onTimerSelected = viewModel::onTimerSelected,
@@ -362,6 +423,16 @@ private fun MainScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SettingsScreen(
+    texture: Float,
+    onTextureChanged: (Float) -> Unit,
+    stereoEnabled: Boolean,
+    onStereoToggled: (Boolean) -> Unit,
+    microDriftDepth: Float,
+    onMicroDriftDepthChanged: (Float) -> Unit,
+    fadeInMs: Long,
+    onFadeInChanged: (Long) -> Unit,
+    fadeOutMs: Long,
+    onFadeOutChanged: (Long) -> Unit,
     onBack: () -> Unit,
 ) {
     Scaffold(
@@ -386,27 +457,191 @@ private fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 32.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp),
+                .padding(horizontal = 32.dp)
+                .verticalScroll(rememberScrollState()),
         ) {
-            Text("Fade Durations", style = MaterialTheme.typography.titleMedium, color = MutedBlue)
+            Spacer(Modifier.height(8.dp))
 
+            // ── Sound controls ─────────────────────────────────
+            // Texture slider
+            SliderSetting(
+                title = "Texture",
+                rangeLabel = "smooth \u2194 grainy",
+                value = texture,
+                onValueChange = onTextureChanged,
+            )
+
+            Spacer(Modifier.height(20.dp))
+
+            // Micro drift slider
+            SliderSetting(
+                title = "Micro drift",
+                rangeLabel = "none \u2194 max",
+                value = microDriftDepth,
+                onValueChange = onMicroDriftDepthChanged,
+            )
+
+            Spacer(Modifier.height(20.dp))
+
+            // Stereo toggle
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Fade in", color = MutedBlue)
-                Text("${PlaybackViewModel.DEFAULT_FADE_IN_MS / 1000}s", color = MutedBlue)
+                Text("Stereo", color = MutedBlue, style = MaterialTheme.typography.titleMedium)
+                Switch(
+                    checked = stereoEnabled,
+                    onCheckedChange = onStereoToggled,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = MutedBlue,
+                        checkedTrackColor = DimBlue,
+                        uncheckedThumbColor = DimBlue,
+                        uncheckedTrackColor = DarkNavy,
+                    ),
+                )
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+            Spacer(Modifier.height(24.dp))
+            HorizontalDivider(color = DimBlue)
+            Spacer(Modifier.height(24.dp))
+
+            // ── Fade durations ─────────────────────────────────
+            FadePicker(
+                label = "Fade in",
+                selectedMs = fadeInMs,
+                onSelected = onFadeInChanged,
+            )
+
+            Spacer(Modifier.height(16.dp))
+
+            FadePicker(
+                label = "Fade out",
+                selectedMs = fadeOutMs,
+                onSelected = onFadeOutChanged,
+            )
+
+            Spacer(Modifier.height(24.dp))
+            HorizontalDivider(color = DimBlue)
+            Spacer(Modifier.height(24.dp))
+
+            // ── About ──────────────────────────────────────────
+            Text(
+                text = "Generates ambient noise to mask distractions and " +
+                    "help you sleep. The Color slider shapes the tone from " +
+                    "bright (white) through balanced (pink) to deep (brown).",
+                color = MutedBlue.copy(alpha = 0.7f),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+
+            Spacer(Modifier.height(20.dp))
+
+            Text(
+                text = "Made by The Moving Finger Studios",
+                color = MutedBlue.copy(alpha = 0.7f),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+
+            Spacer(Modifier.height(16.dp))
+
+            Text(
+                text = "In Memoriam\nSergei Skarupo, 1973\u20132021",
+                color = MutedBlue.copy(alpha = 0.5f),
+                style = MaterialTheme.typography.bodyMedium,
+                fontStyle = FontStyle.Italic,
+                textAlign = TextAlign.Start,
+            )
+
+            Spacer(Modifier.height(16.dp))
+
+            Text(
+                text = "v${getVersionName()}",
+                color = MutedBlue.copy(alpha = 0.4f),
+                style = MaterialTheme.typography.bodySmall,
+            )
+
+            Spacer(Modifier.height(32.dp))
+        }
+    }
+}
+
+@Composable
+private fun SliderSetting(
+    title: String,
+    rangeLabel: String,
+    value: Float,
+    onValueChange: (Float) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(title, color = MutedBlue, style = MaterialTheme.typography.titleMedium)
+        Text(
+            rangeLabel,
+            color = MutedBlue.copy(alpha = 0.5f),
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+    Slider(
+        value = value,
+        onValueChange = onValueChange,
+        valueRange = 0f..1f,
+        colors = SliderDefaults.colors(
+            thumbColor = MutedBlue,
+            activeTrackColor = MutedBlue,
+            inactiveTrackColor = DimBlue,
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+@Composable
+private fun FadePicker(
+    label: String,
+    selectedMs: Long,
+    onSelected: (Long) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selectedLabel = fadeOptions.firstOrNull { it.ms == selectedMs }?.label
+        ?: "${selectedMs / 1000}s"
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, color = MutedBlue, style = MaterialTheme.typography.titleMedium)
+
+        Box {
+            OutlinedButton(onClick = { expanded = true }) {
+                Text(selectedLabel, color = MutedBlue)
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
             ) {
-                Text("Fade out", color = MutedBlue)
-                Text("${PlaybackViewModel.DEFAULT_FADE_OUT_MS / 1000}s", color = MutedBlue)
+                for (option in fadeOptions) {
+                    DropdownMenuItem(
+                        text = { Text(option.label) },
+                        onClick = {
+                            onSelected(option.ms)
+                            expanded = false
+                        },
+                    )
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun getVersionName(): String {
+    val context = LocalContext.current
+    return try {
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "0.1.0"
+    } catch (_: Exception) {
+        "0.1.0"
     }
 }
 
@@ -450,6 +685,18 @@ private fun MainScreenPlayingPreview() {
 @Composable
 private fun SettingsScreenPreview() {
     MaterialTheme(colorScheme = NoiseMachineColors) {
-        SettingsScreen(onBack = {})
+        SettingsScreen(
+            texture = 0.3f,
+            onTextureChanged = {},
+            stereoEnabled = true,
+            onStereoToggled = {},
+            microDriftDepth = 0.2f,
+            onMicroDriftDepthChanged = {},
+            fadeInMs = 2000L,
+            onFadeInChanged = {},
+            fadeOutMs = 5000L,
+            onFadeOutChanged = {},
+            onBack = {},
+        )
     }
 }

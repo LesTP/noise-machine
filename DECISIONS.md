@@ -214,14 +214,14 @@ Rationale: Creates a very slow, subtle tonal wandering that makes the noise feel
 Revisit if: the drift is perceptible as a rhythmic pattern (would need to switch from periodic LFO to random walk).
 
 D-34: Fade duration configurability — picker with fixed options
-Date: 2026-04-18 | Status: Open
+Date: 2026-04-18 | Status: Closed
 Priority: Nice-to-have
 Decision: Settings screen offers fade-in and fade-out duration pickers with options: 0s / 1s / 2s / 5s / 10s. Values persisted via PrefsStore. ViewModel reads at init and uses for fade orchestration. Current defaults (2s in, 5s out from D-25) remain the initial selection.
 Rationale: Fixed options are simpler than a slider and cover the useful range. 0s allows instant start/stop for users who prefer it. 10s is the upper bound — longer fades are unusual for sleep noise.
 Revisit if: users want finer control (switch to a slider) or custom values beyond 10s.
 
 D-35: POST_NOTIFICATIONS permission flow — request on first play
-Date: 2026-04-18 | Status: Open
+Date: 2026-04-18 | Status: Closed
 Priority: Important
 Decision: On API 33+, request `POST_NOTIFICATIONS` via `ActivityResultLauncher<String>` (rememberLauncherForActivityResult) when the user first taps Play. If denied, playback proceeds normally — the foreground service notification is invisible but playback still works.
 Rationale: Requesting on first play is contextual — the user understands why the app needs notifications at that moment. Not blocking playback on denial keeps the app functional. The notification is helpful (shows Stop button) but not essential.

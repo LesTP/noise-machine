@@ -34,8 +34,8 @@ import kotlinx.coroutines.launch
  */
 class PlaybackViewModel(
     private val controller: PlaybackController,
-    private val fadeInMs: Long = 0L,
-    private val fadeOutMs: Long = 0L,
+    private var fadeInMs: Long = 0L,
+    private var fadeOutMs: Long = 0L,
     private val prefs: PrefsStore? = null,
     private val timerController: TimerController? = null,
 ) : ViewModel() {
@@ -47,6 +47,21 @@ class PlaybackViewModel(
 
     private val _color = MutableStateFlow(0f)
     val color: StateFlow<Float> = _color.asStateFlow()
+
+    private val _texture = MutableStateFlow(0f)
+    val texture: StateFlow<Float> = _texture.asStateFlow()
+
+    private val _stereoEnabled = MutableStateFlow(false)
+    val stereoEnabled: StateFlow<Boolean> = _stereoEnabled.asStateFlow()
+
+    private val _microDriftDepth = MutableStateFlow(0f)
+    val microDriftDepth: StateFlow<Float> = _microDriftDepth.asStateFlow()
+
+    private val _fadeInMs = MutableStateFlow(fadeInMs)
+    val fadeInMsFlow: StateFlow<Long> = _fadeInMs.asStateFlow()
+
+    private val _fadeOutMs = MutableStateFlow(fadeOutMs)
+    val fadeOutMsFlow: StateFlow<Long> = _fadeOutMs.asStateFlow()
 
     val timerState: StateFlow<TimerState> =
         timerController?.timerState ?: MutableStateFlow(TimerState.Off)
@@ -63,6 +78,23 @@ class PlaybackViewModel(
             _color.value = savedColor
             controller.setColor(savedColor)
             lastTimerDurationMs = it.timerDurationMs
+
+            val savedTexture = it.texture.coerceIn(0f, 1f)
+            _texture.value = savedTexture
+            controller.setTexture(savedTexture)
+
+            val savedStereo = it.stereoEnabled
+            _stereoEnabled.value = savedStereo
+            controller.setStereoWidth(if (savedStereo) STEREO_WIDTH_ON else 0f)
+
+            val savedDrift = it.microDriftDepth.coerceIn(0f, 1f)
+            _microDriftDepth.value = savedDrift
+            controller.setMicroDriftDepth(savedDrift)
+
+            fadeInMs = it.fadeInMs
+            _fadeInMs.value = fadeInMs
+            fadeOutMs = it.fadeOutMs
+            _fadeOutMs.value = fadeOutMs
         }
         timerController?.let {
             it.onTimerExpired = { onStopClicked() }
@@ -74,6 +106,38 @@ class PlaybackViewModel(
         _color.value = c
         controller.setColor(c)
         prefs?.let { it.color = c }
+    }
+
+    fun onTextureChanged(texture: Float) {
+        val t = texture.coerceIn(0f, 1f)
+        _texture.value = t
+        controller.setTexture(t)
+        prefs?.let { it.texture = t }
+    }
+
+    fun onStereoToggled(enabled: Boolean) {
+        _stereoEnabled.value = enabled
+        controller.setStereoWidth(if (enabled) STEREO_WIDTH_ON else 0f)
+        prefs?.let { it.stereoEnabled = enabled }
+    }
+
+    fun onMicroDriftDepthChanged(depth: Float) {
+        val d = depth.coerceIn(0f, 1f)
+        _microDriftDepth.value = d
+        controller.setMicroDriftDepth(d)
+        prefs?.let { it.microDriftDepth = d }
+    }
+
+    fun onFadeInChanged(ms: Long) {
+        fadeInMs = ms
+        _fadeInMs.value = ms
+        prefs?.let { it.fadeInMs = ms }
+    }
+
+    fun onFadeOutChanged(ms: Long) {
+        fadeOutMs = ms
+        _fadeOutMs.value = ms
+        prefs?.let { it.fadeOutMs = ms }
     }
 
     fun onPlayClicked() {
@@ -184,11 +248,12 @@ class PlaybackViewModel(
             require(modelClass.isAssignableFrom(PlaybackViewModel::class.java)) {
                 "Factory only creates PlaybackViewModel; got $modelClass"
             }
+            val prefs = SharedPrefsStore(appContext)
             return PlaybackViewModel(
                 controller = controller,
-                fadeInMs = DEFAULT_FADE_IN_MS,
-                fadeOutMs = DEFAULT_FADE_OUT_MS,
-                prefs = SharedPrefsStore(appContext),
+                fadeInMs = prefs.fadeInMs,
+                fadeOutMs = prefs.fadeOutMs,
+                prefs = prefs,
                 timerController = timerController,
             ) as T
         }
@@ -199,5 +264,7 @@ class PlaybackViewModel(
         const val DEFAULT_FADE_IN_MS = 2_000L
         /** Default fade-out duration (D-25). */
         const val DEFAULT_FADE_OUT_MS = 5_000L
+        /** Fixed stereo width when enabled (restrained per D-5). */
+        private const val STEREO_WIDTH_ON = 0.3f
     }
 }

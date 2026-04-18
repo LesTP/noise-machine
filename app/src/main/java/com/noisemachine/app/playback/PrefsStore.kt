@@ -7,4 +7,9 @@ package com.noisemachine.app.playback
 interface PrefsStore {
     var color: Float
     var timerDurationMs: Long
+    var texture: Float
+    var stereoEnabled: Boolean
+    var microDriftDepth: Float
+    var fadeInMs: Long
+    var fadeOutMs: Long
 }
