@@ -535,3 +535,24 @@ Phase 4 delivered a foreground service (`PlaybackService`) that owns `AudioEngin
 **Key artifacts (Phase 4):**
 - New: `PlaybackService.kt`, `TimerController.kt`, `PlaybackServiceTest.kt`
 - Modified: `PlaybackViewModel.kt`, `PlaybackViewModelTest.kt`, `MainActivity.kt`, `AndroidManifest.xml`, `build.gradle.kts`
+
+### Phase 5: Secondary Polish
+
+### Phase Plan: Secondary Polish
+- **Mode:** Discuss
+- **Outcome:** complete
+- **Contract changes:** none
+
+Broke Phase 5 into 6 steps: 5 Build + 1 Refine. Scope: Settings screen expansion with functional DSP controls for all deferred parameters plus POST_NOTIFICATIONS fix.
+
+Features planned:
+1. TextureShaper — zero-order hold (sample decimation) for smooth↔grainy control
+2. StereoStage — first-order all-pass on R channel for subtle stereo decorrelation
+3. MicroDrift — slow LFO modulating Color offset for subtle tonal wandering
+4. Fade durations — configurable fade-in/fade-out via Settings (currently read-only)
+5. About section — app name, version, description
+6. POST_NOTIFICATIONS — runtime permission dialog on API 33+
+
+Test spec: T38–T48, M41–M55. Five decisions queued (D-31–D-35).
+
+DSP pipeline change: SpectralShaper now receives `color + microDriftOffset`; TextureShaper inserts after SpectralShaper; StereoStage replaces inline `floatMonoToInt16Stereo`. Contract changes expected: `PlaybackController` gains `setTexture`, `setStereoWidth`, `setMicroDriftDepth`; `PrefsStore` gains 5 new fields.

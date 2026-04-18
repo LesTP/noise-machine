@@ -67,7 +67,7 @@ The render loop runs on a dedicated high-priority audio thread owned by AudioEng
 | 2 | Phase 2 — Color engine: SpectralShaper + ParameterSmoother + GainSafety + tuning | Primary product feature; locks in the audible quality bar | Phase 2 complete |
 | 3 | Phase 3 — Productization: Timer, fade-in/fade-out, Settings skeleton, persistence | Table stakes for a sleep app | Complete |
 | 4 | Phase 4 — Background robustness: Foreground service + notification + screen-off behavior | Required for long unattended sessions | Complete |
-| 5 | Phase 5 — Secondary polish: Texture, restrained stereo decorrelation, optional micro-variation | Deferred enhancements that must not break the calm default feel | Not started |
+| 5 | Phase 5 — Secondary polish: Texture, restrained stereo decorrelation, micro-variation, fade config, About, permission | Deferred enhancements that must not break the calm default feel | In progress |
 
 ## Coupling Notes
 - **SpectralShaper ↔ ParameterSmoother** — tight. Any change to how Color maps to internal coefficients must go through ParameterSmoother to preserve artifact-free transitions. Watch: changes to coefficient schedule require re-tuning smoother ramp times.

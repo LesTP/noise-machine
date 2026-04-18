@@ -191,3 +191,38 @@ Priority: Important
 Decision: Request `AUDIOFOCUS_GAIN` on playback start, release on stop. Standard Android audio focus protocol.
 Rationale: Without audio focus, other apps' audio can overlap with noise playback. Requesting focus is standard behavior for audio apps and ensures clean coexistence with calls, alarms, and other media.
 Revisit if: users want noise to mix with other audio (would use `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK` instead).
+
+D-31: Texture DSP approach — zero-order hold (sample decimation)
+Date: 2026-04-18 | Status: Open
+Priority: Important
+Decision: TextureShaper uses variable-rate zero-order hold. At texture=0, every sample passes through (smooth). At texture=1, each sample is held/repeated for MAX_HOLD frames before advancing (grainy). Inserted between SpectralShaper and GainSafety.
+Rationale: Orthogonal to Color (changes temporal microstructure, not spectral tilt). Very cheap — one counter and one held-sample value, no allocations. Produces a clear, distinctive audible effect that users can perceive on a slider. Alternatives considered: amplitude modulation with slow noise envelope — more organic but overlaps with micro-variation; variable-cutoff LPF — overlaps with Color control; both rejected.
+Revisit if: perceptual tuning reveals the zero-order hold sounds too "digital" at moderate settings, in which case a first-order interpolated hold or noise-modulated smoothing could soften the effect.
+
+D-32: Stereo decorrelation method — first-order all-pass on R channel
+Date: 2026-04-18 | Status: Open
+Priority: Important
+Decision: StereoStage applies a first-order all-pass filter to the mono signal to produce the R channel. L = mono, R = mono × (1 − width) + allpass(mono) × width. At width=0, identical channels (D-5 behavior). Width range 0.0–0.3 (restrained).
+Rationale: All-pass preserves frequency content (spectral tilt from Color stays consistent between ears), produces natural-sounding width with minimal CPU cost (one state variable). Alternatives considered: second independent NoiseSource — doubles noise generation cost and creates a "two different sounds" feel; delayed copy — comb-filtering at short delays; both rejected.
+Revisit if: headphone testing reveals the all-pass width is too subtle, in which case a short FIR decorrelation filter could add more spatial depth.
+
+D-33: Micro-drift mechanism — slow LFO modulating Color offset
+Date: 2026-04-18 | Status: Open
+Priority: Nice-to-have
+Decision: MicroDrift generates a slow LFO (0.02–0.1 Hz) that produces a small Color offset added to the user's Color value before SpectralShaper. Depth parameter [0, 1] scales the maximum offset (e.g., ±0.05 at depth=1.0). The effective Color is clamped to [0, 1].
+Rationale: Creates a very slow, subtle tonal wandering that makes the noise feel more organic and alive without being attention-grabbing. Modulating Color reuses the existing spectral shaping pipeline — no new DSP topology needed. The drift rate is well below conscious perception (~15–60 second cycle).
+Revisit if: the drift is perceptible as a rhythmic pattern (would need to switch from periodic LFO to random walk).
+
+D-34: Fade duration configurability — picker with fixed options
+Date: 2026-04-18 | Status: Open
+Priority: Nice-to-have
+Decision: Settings screen offers fade-in and fade-out duration pickers with options: 0s / 1s / 2s / 5s / 10s. Values persisted via PrefsStore. ViewModel reads at init and uses for fade orchestration. Current defaults (2s in, 5s out from D-25) remain the initial selection.
+Rationale: Fixed options are simpler than a slider and cover the useful range. 0s allows instant start/stop for users who prefer it. 10s is the upper bound — longer fades are unusual for sleep noise.
+Revisit if: users want finer control (switch to a slider) or custom values beyond 10s.
+
+D-35: POST_NOTIFICATIONS permission flow — request on first play
+Date: 2026-04-18 | Status: Open
+Priority: Important
+Decision: On API 33+, request `POST_NOTIFICATIONS` via `ActivityResultLauncher<String>` (rememberLauncherForActivityResult) when the user first taps Play. If denied, playback proceeds normally — the foreground service notification is invisible but playback still works.
+Rationale: Requesting on first play is contextual — the user understands why the app needs notifications at that moment. Not blocking playback on denial keeps the app functional. The notification is helpful (shows Stop button) but not essential.
+Revisit if: Android changes foreground service requirements to mandate visible notifications (would need to block playback on denial).
