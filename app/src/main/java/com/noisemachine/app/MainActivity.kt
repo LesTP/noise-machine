@@ -51,7 +51,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import com.noisemachine.app.audio.PlaybackController
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
@@ -68,7 +67,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.noisemachine.app.playback.PlaybackState
 import com.noisemachine.app.playback.PlaybackViewModel
-import com.noisemachine.app.playback.TimerController
 import com.noisemachine.app.playback.TimerState
 import kotlinx.coroutines.delay
 
@@ -135,7 +133,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val service by serviceState
             if (service != null) {
-                NoiseMachineApp(controller = service!!, timerController = service!!)
+                NoiseMachineApp(service = service!!)
             }
         }
     }
@@ -151,16 +149,21 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun NoiseMachineApp(
-    controller: PlaybackController,
-    timerController: TimerController,
+    service: PlaybackService,
     viewModel: PlaybackViewModel = viewModel(
         factory = PlaybackViewModel.Factory(
-            controller = controller,
+            controller = service,
             appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext,
-            timerController = timerController,
+            timerController = service,
         ),
     ),
 ) {
+    // Wire external stop requests (notification, focus loss, task removed) through the VM.
+    androidx.compose.runtime.DisposableEffect(service, viewModel) {
+        service.onStopRequested = { viewModel.onStopClicked() }
+        onDispose { service.onStopRequested = null }
+    }
+
     val state by viewModel.state.collectAsStateWithLifecycle()
     val color by viewModel.color.collectAsStateWithLifecycle()
     val timerState by viewModel.timerState.collectAsStateWithLifecycle()

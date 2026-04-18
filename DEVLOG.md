@@ -498,3 +498,27 @@ Three additions to `PlaybackService`:
 3. **onTaskRemoved** — overrides `onTaskRemoved()` → `stop()` per D-29 (swipe from recents = explicit dismissal).
 
 T36 verifies the notification has a "Stop" action. Audio focus tests use an `internal audioFocusListener` accessor to simulate focus loss/transient loss. `onTaskRemoved` test verifies engine stops. `AudioFocusRequest`'s `focusGain` and `onAudioFocusChangeListener` are not public API, so tests verify behavior through the internal listener and observable engine state rather than shadow inspection.
+
+### Step 5: End-to-end manual verification + review fixes
+- **Mode:** Build
+- **Outcome:** complete — M31–M39 verified on emulator (API 36) + physical device. 78 tests pass (26 service + 21 VM + 31 audio). M40 (multi-hour) deferred to ongoing use.
+- **Contract changes:** `NoiseMachineApp` composable signature changed from `(PlaybackController, TimerController)` to `(PlaybackService)`; `PlaybackService` gained `onStopRequested` callback and `dispatchStop()` helper.
+
+Manual verification on emulator and physical device uncovered 5 bugs, all fixed:
+
+1. **VM state sync on Activity recreation** — `PlaybackViewModel._state` always initialized as `Idle`. After screen-off/on, the stop button showed as play triangle even while audio was playing. Fixed by checking `controller.isPlaying` at init.
+
+2. **Fade-in regression** — VM calls `snapGain(0f)` before `start()`, but the service creates the engine inside `start()`, so `snapGain` went to a null engine. Audio started at full volume abruptly. Fixed with `pendingSnapGain` buffering in `PlaybackService`: if `snapGain()` is called before the engine exists, the value is stored and applied when `start()` creates the engine.
+
+3. **No notification visible** — `POST_NOTIFICATIONS` permission was `granted=false` on API 36. Granted via `adb shell pm grant`. Runtime permission request dialog deferred (out of Phase 4 scope).
+
+4. **Notification stop: no fade-out, stale button** — `ACTION_STOP` from the notification called `service.stop()` directly, bypassing the VM's fade-out orchestration and leaving `_state` at `Playing`. Fixed with `onStopRequested` callback pattern (analogous to `onTimerExpired`): the composable wires `service.onStopRequested = { viewModel.onStopClicked() }` via `DisposableEffect`, so external stop triggers (notification, audio focus loss) route through the VM for proper fade-out + state update. Falls back to direct `stop()` when VM is destroyed.
+
+5. **`AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK` stopping playback** — A notification chime triggered a 5-second fade-out, which is wrong for a sleep noise app. Fixed: duck events are now ignored (playback continues through brief audio interruptions). Only `AUDIOFOCUS_LOSS` and `AUDIOFOCUS_LOSS_TRANSIENT` stop playback.
+
+Additional review fixes:
+- `onTaskRemoved` uses direct `stop()` (not `dispatchStop`) — user explicitly dismissed the app, no fade needed. Avoids zombie service from cancelled fadeJob.
+- `pendingSnapGain` cleared in `stop()` — no stale gain across sessions.
+- `dispatchStop()` helper captures `onStopRequested` in a local var before invoking — prevents non-atomic read-invoke on the callback.
+
++11 new tests: `onStopRequested` callback routing (3 tests), `pendingSnapGain` buffering (4 tests), duck-ignored, task-removed-always-direct, callback-null-fallback, VM `isPlaying` init sync.

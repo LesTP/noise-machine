@@ -57,6 +57,7 @@ import kotlinx.coroutines.launch
 class PlaybackService : Service(), PlaybackController, TimerController {
 
     private var engine: PlaybackController? = null
+    private var pendingSnapGain: Float? = null
     private var audioManager: AudioManager? = null
     private var focusRequest: AudioFocusRequest? = null
 
@@ -67,8 +68,9 @@ class PlaybackService : Service(), PlaybackController, TimerController {
     private val focusListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
         when (focusChange) {
             AudioManager.AUDIOFOCUS_LOSS,
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> stop()
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> dispatchStop()
+            // AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK: ignore — sleep noise should
+            // continue through notification chimes and nav cues.
         }
     }
 
@@ -82,6 +84,19 @@ class PlaybackService : Service(), PlaybackController, TimerController {
     override val timerState: StateFlow<TimerState> = _timerState.asStateFlow()
 
     override var onTimerExpired: (() -> Unit)? = null
+
+    /**
+     * Callback for external stop requests (notification, focus loss, task removed).
+     * When set (VM alive), routes through the VM for proper fade-out + state update.
+     * When null (VM destroyed), falls back to immediate [stop].
+     */
+    var onStopRequested: (() -> Unit)? = null
+
+    /** Routes stop through [onStopRequested] if set, else falls back to [stop]. */
+    private fun dispatchStop() {
+        val cb = onStopRequested
+        if (cb != null) cb() else stop()
+    }
 
     override fun startTimer(durationMs: Long) {
         timerJob?.cancel()
@@ -124,13 +139,13 @@ class PlaybackService : Service(), PlaybackController, TimerController {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_STOP -> stop()
+            ACTION_STOP -> dispatchStop()
         }
         return START_NOT_STICKY
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        stop()
+        stop()  // Hard stop — user dismissed the app, no fade needed (D-29).
         super.onTaskRemoved(rootIntent)
     }
 
@@ -153,6 +168,7 @@ class PlaybackService : Service(), PlaybackController, TimerController {
         if (!requestFocus()) return
         val newEngine = controllerFactory()
         engine = newEngine
+        pendingSnapGain?.let { newEngine.snapGain(it); pendingSnapGain = null }
         startForeground(NOTIFICATION_ID, buildNotification())
         newEngine.start()
     }
@@ -162,6 +178,7 @@ class PlaybackService : Service(), PlaybackController, TimerController {
         val e = engine ?: return
         e.stop()
         engine = null
+        pendingSnapGain = null
         abandonFocus()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -176,7 +193,8 @@ class PlaybackService : Service(), PlaybackController, TimerController {
     }
 
     override fun snapGain(gain: Float) {
-        engine?.snapGain(gain)
+        val e = engine
+        if (e != null) e.snapGain(gain) else pendingSnapGain = gain
     }
 
     // -- Audio focus -------------------------------------------------------

@@ -40,7 +40,9 @@ class PlaybackViewModel(
     private val timerController: TimerController? = null,
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow<PlaybackState>(PlaybackState.Idle)
+    private val _state = MutableStateFlow(
+        if (controller.isPlaying) PlaybackState.Playing else PlaybackState.Idle,
+    )
     val state: StateFlow<PlaybackState> = _state.asStateFlow()
 
     private val _color = MutableStateFlow(0f)

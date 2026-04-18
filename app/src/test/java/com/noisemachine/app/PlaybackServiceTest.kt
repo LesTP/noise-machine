@@ -65,7 +65,11 @@ class PlaybackServiceTest {
 
         override fun setColor(color: Float) {}
         override fun setGain(gain: Float) {}
-        override fun snapGain(gain: Float) {}
+
+        val snapGainCalls = mutableListOf<Float>()
+        override fun snapGain(gain: Float) {
+            snapGainCalls.add(gain)
+        }
     }
 
     @Before
@@ -360,5 +364,142 @@ class PlaybackServiceTest {
         service.audioFocusListener.onAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
 
         assertFalse("Engine must be stopped on transient focus loss", fakeController.isPlaying)
+    }
+
+    /** Ducking focus loss is ignored — sleep noise should continue through chimes. */
+    @Test
+    fun audio_focus_duck_does_not_stop_playback() {
+        val service = serviceController.create().get()
+        service.start()
+        assertTrue(service.isPlaying)
+
+        service.audioFocusListener.onAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK)
+
+        assertTrue("Engine must keep playing on duck", fakeController.isPlaying)
+        assertEquals(0, fakeController.stopCalls.get())
+    }
+
+    // ── onStopRequested callback routing ─────────────────────────────
+
+    /** ACTION_STOP with onStopRequested set invokes callback, not direct stop. */
+    @Test
+    fun action_stop_routes_through_callback_when_set() {
+        val service = serviceController.create().get()
+        service.start()
+
+        var callbackInvoked = false
+        service.onStopRequested = { callbackInvoked = true }
+
+        service.onStartCommand(Intent(PlaybackService.ACTION_STOP), 0, 1)
+
+        assertTrue("onStopRequested must be called", callbackInvoked)
+        // Direct stop NOT called — callback handles it.
+        assertTrue("Engine still playing (callback doesn't call stop)", fakeController.isPlaying)
+    }
+
+    /** Focus loss with onStopRequested set invokes callback, not direct stop. */
+    @Test
+    fun audio_focus_loss_routes_through_callback_when_set() {
+        val service = serviceController.create().get()
+        service.start()
+
+        var callbackInvoked = false
+        service.onStopRequested = { callbackInvoked = true }
+
+        service.audioFocusListener.onAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS)
+
+        assertTrue("onStopRequested must be called on focus loss", callbackInvoked)
+        assertTrue("Engine still playing (callback doesn't call stop)", fakeController.isPlaying)
+    }
+
+    /** onTaskRemoved always calls stop() directly (no fade needed on dismissal). */
+    @Test
+    fun on_task_removed_always_stops_directly() {
+        val service = serviceController.create().get()
+        service.start()
+
+        var callbackInvoked = false
+        service.onStopRequested = { callbackInvoked = true }
+
+        service.onTaskRemoved(null)
+
+        assertFalse("onStopRequested must NOT be called on task removed", callbackInvoked)
+        assertFalse("Engine must be stopped directly", fakeController.isPlaying)
+        assertEquals(1, fakeController.stopCalls.get())
+    }
+
+    /** After nulling onStopRequested, ACTION_STOP falls back to direct stop. */
+    @Test
+    fun action_stop_falls_back_to_direct_stop_when_callback_null() {
+        val service = serviceController.create().get()
+        service.start()
+
+        service.onStopRequested = { /* set */ }
+        service.onStopRequested = null // dispose
+
+        service.onStartCommand(Intent(PlaybackService.ACTION_STOP), 0, 1)
+
+        assertFalse("Engine must be stopped via fallback", fakeController.isPlaying)
+    }
+
+    // ── pendingSnapGain ─────────────────────────────────────────────
+
+    /** snapGain before start is buffered and applied when engine is created. */
+    @Test
+    fun snap_gain_before_start_is_buffered() {
+        val service = serviceController.create().get()
+
+        service.snapGain(0f)
+        assertEquals("No engine yet, no snapGain call", 0, fakeController.snapGainCalls.size)
+
+        service.start()
+
+        assertEquals("Buffered snapGain applied on start", 1, fakeController.snapGainCalls.size)
+        assertEquals(0f, fakeController.snapGainCalls[0], 0.001f)
+    }
+
+    /** snapGain after start delegates immediately (no buffering). */
+    @Test
+    fun snap_gain_after_start_delegates_immediately() {
+        val service = serviceController.create().get()
+        service.start()
+        fakeController.snapGainCalls.clear() // clear any from start
+
+        service.snapGain(0.5f)
+
+        assertEquals(1, fakeController.snapGainCalls.size)
+        assertEquals(0.5f, fakeController.snapGainCalls[0], 0.001f)
+    }
+
+    /** Multiple snapGain calls before start: only the last value is applied. */
+    @Test
+    fun multiple_snap_gain_before_start_keeps_last() {
+        val service = serviceController.create().get()
+
+        service.snapGain(0.3f)
+        service.snapGain(0.7f)
+
+        service.start()
+
+        assertEquals("Only one snapGain call on start", 1, fakeController.snapGainCalls.size)
+        assertEquals(0.7f, fakeController.snapGainCalls[0], 0.001f)
+    }
+
+    /** stop() clears pendingSnapGain so next start is clean. */
+    @Test
+    fun stop_clears_pending_snap_gain() {
+        val service = serviceController.create().get()
+
+        service.snapGain(0f)  // buffered
+        service.start()       // applied
+        service.stop()        // clears pending
+
+        // Create a fresh fake for the second start cycle.
+        val freshFake = FakeController()
+        PlaybackService.controllerFactory = { freshFake }
+
+        service.start()
+
+        assertEquals("No stale snapGain on second start", 0, freshFake.snapGainCalls.size)
     }
 }

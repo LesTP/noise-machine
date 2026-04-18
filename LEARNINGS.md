@@ -16,7 +16,7 @@ Observations from running the autonomous development loop on Noise Machine. Capt
 
 | # | Iter | Issue | Fix | Impact |
 |---|------|-------|-----|--------|
-| 1 | | | | |
+| 1 | codexbot 109 | Codex worker OOM: `~/.codex/logs_1.sqlite` (97 MB on disk) causes Codex CLI to allocate 13+ GB RAM at startup. Linear growth at ~1.5 GB/30s until container cgroup limit hit. Three consecutive OOM kills crashed the entire TG bot service. | (1) Deleted `logs_1.sqlite` — Codex recreates fresh. (2) Added 20 MB size guard to `run-iteration.sh` — auto-deletes before each run. (3) Bumped container memory 12→14 GB. (4) Installed memory watchdog (cron, Telegram alert at 80%). (5) Installed `memprofile.sh` for diagnostics. | Three crashes, ~1 hour debugging. Root cause: Codex CLI deserializes full session history into memory — 97 MB on disk inflates ~130x. Guard in `run-iteration.sh` prevents recurrence. Cross-project: affects any project using Codex workers on the same container. |
 
 ## Agent Behavior Patterns
 
@@ -87,4 +87,4 @@ Observations from running the autonomous development loop on Noise Machine. Capt
 
 ---
 
-*Last updated: 2026-04-16*
+*Last updated: 2026-04-17*

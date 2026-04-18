@@ -482,6 +482,20 @@ class PlaybackViewModelTest {
         assertNull("onTimerExpired must be null after onCleared", timerCtrl.onTimerExpired)
     }
 
+    /** When controller.isPlaying is true at init, state starts as Playing. */
+    @Test
+    fun init_state_syncs_to_playing_when_controller_is_playing() {
+        val controller = FakeController()
+        controller.start() // make it playing
+        val startsBefore = controller.startCalls.get()
+
+        val vm = PlaybackViewModel(controller)
+
+        assertSame(PlaybackState.Playing, vm.state.value)
+        // Must NOT call start again — engine is already running.
+        assertEquals(startsBefore, controller.startCalls.get())
+    }
+
     // ── Phase 3 persistence tests ───────────────────────────────────
 
     private class FakePrefsStore(
