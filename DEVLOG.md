@@ -522,3 +522,16 @@ Additional review fixes:
 - `dispatchStop()` helper captures `onStopRequested` in a local var before invoking — prevents non-atomic read-invoke on the callback.
 
 +11 new tests: `onStopRequested` callback routing (3 tests), `pendingSnapGain` buffering (4 tests), duck-ignored, task-removed-always-direct, callback-null-fallback, VM `isPlaying` init sync.
+
+### Phase Completion: Background Robustness
+- **Mode:** Review
+- **Outcome:** complete — Phase 4 done. 78 tests (26 service, 21 VM, 31 audio), 0 failures. M31–M39 verified on emulator (API 36) + physical device. M40 (multi-hour) deferred to ongoing use.
+- **Contract changes:** none (review-only fixes: KDoc updates, import cleanup)
+
+Phase 4 delivered a foreground service (`PlaybackService`) that owns `AudioEngine` lifecycle, persistent notification with stop action, timer countdown in service scope, audio focus management, and task-removed cleanup. Five bugs found and fixed during manual verification (VM state sync, fade-in regression, notification permission, notification stop bypass, duck focus handling). Review fixes: stale KDoc on focus behavior, inline `DisposableEffect` import.
+
+**Test count at phase end:** 78 total (26 PlaybackServiceTest, 21 PlaybackViewModelTest, 6 AudioEngineTest, 6 ParameterSmootherTest, 5 BiquadTest, 5 SpectralShaperTest, 6 GainSafetyTest, 3 NoiseSourceTest).
+
+**Key artifacts (Phase 4):**
+- New: `PlaybackService.kt`, `TimerController.kt`, `PlaybackServiceTest.kt`
+- Modified: `PlaybackViewModel.kt`, `PlaybackViewModelTest.kt`, `MainActivity.kt`, `AndroidManifest.xml`, `build.gradle.kts`
