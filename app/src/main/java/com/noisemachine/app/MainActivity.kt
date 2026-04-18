@@ -78,7 +78,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -465,8 +464,7 @@ private fun SettingsScreen(
             // ── Sound controls ─────────────────────────────────
             // Texture slider
             SliderSetting(
-                title = "Texture",
-                rangeLabel = "smooth \u2194 grainy",
+                title = "Texture (smooth \u2194 grainy)",
                 value = texture,
                 onValueChange = onTextureChanged,
             )
@@ -475,8 +473,7 @@ private fun SettingsScreen(
 
             // Micro drift slider
             SliderSetting(
-                title = "Micro drift",
-                rangeLabel = "none \u2194 max",
+                title = "Micro drift (none \u2194 max)",
                 value = microDriftDepth,
                 onValueChange = onMicroDriftDepthChanged,
             )
@@ -527,9 +524,10 @@ private fun SettingsScreen(
 
             // ── About ──────────────────────────────────────────
             Text(
-                text = "Generates ambient noise to mask distractions and " +
-                    "help you sleep. The Color slider shapes the tone from " +
-                    "bright (white) through balanced (pink) to deep (brown).",
+                text = "The Noise Machine generates ambient noise to mask " +
+                    "distractions and help you sleep. The Color slider " +
+                    "shapes the tone from bright (white) through balanced " +
+                    "(pink) to deep (brown).",
                 color = MutedBlue.copy(alpha = 0.7f),
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -545,11 +543,10 @@ private fun SettingsScreen(
             Spacer(Modifier.height(16.dp))
 
             Text(
-                text = "In Memoriam\nSergei Skarupo, 1973\u20132021",
+                text = "In memoriam Sergei Skarupo, 1973\u20132021",
                 color = MutedBlue.copy(alpha = 0.5f),
                 style = MaterialTheme.typography.bodyMedium,
                 fontStyle = FontStyle.Italic,
-                textAlign = TextAlign.Start,
             )
 
             Spacer(Modifier.height(16.dp))
@@ -568,21 +565,10 @@ private fun SettingsScreen(
 @Composable
 private fun SliderSetting(
     title: String,
-    rangeLabel: String,
     value: Float,
     onValueChange: (Float) -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(title, color = MutedBlue, style = MaterialTheme.typography.titleMedium)
-        Text(
-            rangeLabel,
-            color = MutedBlue.copy(alpha = 0.5f),
-            style = MaterialTheme.typography.bodySmall,
-        )
-    }
+    Text(title, color = MutedBlue, style = MaterialTheme.typography.titleMedium)
     Slider(
         value = value,
         onValueChange = onValueChange,
@@ -639,9 +625,9 @@ private fun FadePicker(
 private fun getVersionName(): String {
     val context = LocalContext.current
     return try {
-        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "0.1.0"
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "2.0"
     } catch (_: Exception) {
-        "0.1.0"
+        "2.0"
     }
 }
 

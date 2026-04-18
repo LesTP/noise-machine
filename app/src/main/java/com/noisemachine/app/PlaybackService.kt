@@ -264,7 +264,7 @@ class PlaybackService : Service(), PlaybackController, TimerController {
         ).build()
 
         return Notification.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_lock_silent_mode_off)
+            .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("Noise Machine")
             .setContentText("Playing")
             .setOngoing(true)

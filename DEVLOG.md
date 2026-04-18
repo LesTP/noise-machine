@@ -641,3 +641,20 @@ Expanded Settings screen with three sections:
 Settings screen is scrollable (verticalScroll) with dividers between sections. Stereo uses a fixed width of 0.3 when enabled (restrained per D-5).
 
 Two decisions closed: D-34 (fade picker), D-35 (POST_NOTIFICATIONS flow).
+
+### Step 6: Manual verification + review fixes
+- **Mode:** Code + on-device verification
+- **Outcome:** complete — M41–M55 on-device verification pass. UI polish fixes applied, app icon added, version bumped to 2.0. 101 unit tests pass, assembleDebug builds.
+- **Contract changes:** None (UI-only changes).
+
+**UI fixes from on-device review:**
+- Slider labels consolidated to single line: "Texture (smooth ↔ grainy)", "Micro drift (none ↔ max)" — cleaner layout than split title/range.
+- About section: "The Noise Machine generates…" (app name in text), "In memoriam Sergei Skarupo, 1973–2021" on single line.
+- Version bumped to 2.0 in `build.gradle.kts`.
+
+**App icon:**
+- Source `white_shell.png` (1024×1024 black-on-white conch shell) recolored to app theme: DarkNavy (#0F1A2E) background, MutedBlue (#5A7BAF) shell outline.
+- Android adaptive icon system: `mipmap-anydpi-v26/ic_launcher.xml` with separate `ic_launcher_foreground.png` (shell on transparent, 108dp canvas) and `ic_launcher_background.png` (solid DarkNavy). Shell fills the visible 72dp zone within the 108dp adaptive canvas.
+- Legacy `ic_launcher.png` retained for pre-Android 8 devices.
+- All 5 density buckets generated (mdpi through xxxhdpi).
+- Manifest updated: `android:icon="@mipmap/ic_launcher"`. Notification icon updated to `R.mipmap.ic_launcher`.
