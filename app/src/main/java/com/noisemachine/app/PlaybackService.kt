@@ -40,6 +40,8 @@ import kotlinx.coroutines.launch
  * Audio focus: requests `AUDIOFOCUS_GAIN` on start, releases on stop.
  * Focus loss (permanent or transient) stops playback — for a sleep noise
  * app, an interruption means the user was woken and will restart manually.
+ * Ducking (`AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK`) is ignored so sleep noise
+ * continues through notification chimes and navigation cues.
  *
  * Lifecycle:
  * - Activity calls `startService()` to put the service in "started" state,

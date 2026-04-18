@@ -48,6 +48,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -158,8 +159,8 @@ fun NoiseMachineApp(
         ),
     ),
 ) {
-    // Wire external stop requests (notification, focus loss, task removed) through the VM.
-    androidx.compose.runtime.DisposableEffect(service, viewModel) {
+    // Wire external stop requests (notification, focus loss) through the VM.
+    DisposableEffect(service, viewModel) {
         service.onStopRequested = { viewModel.onStopClicked() }
         onDispose { service.onStopRequested = null }
     }
