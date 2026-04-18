@@ -584,3 +584,18 @@ The `toInt16` companion function replicates the clip-safe conversion from the ol
 Tests: T41 (identical L/R at width=0), T41b (specific conversion values match legacy), T42 (>80% L≠R at width=0.3), T42b (>90% L≠R at width=1.0), T42c (monotonicity: width=1.0 diff > width=0.3 diff), T43 (all output bounded Int16), T43b (heap delta < 256 KB), plus reset edge-case test.
 
 One decision closed: D-32 (Stereo decorrelation: first-order all-pass, coeff=0.6).
+
+### Step 3: MicroDrift DSP
+- **Mode:** Code
+- **Outcome:** complete — T47, T47b, T48, T48b, T48c, T48d, reset test passed (7 tests). Total test count: 100 (93 Phase 1–5.2 + 7 MicroDrift), 0 failures. `testDebugUnitTest` BUILD SUCCESSFUL.
+- **Contract changes:** none
+
+Implemented `app/src/main/java/com/noisemachine/app/audio/MicroDrift.kt` — slow triangle-wave LFO at 0.05 Hz (~20 s period) producing a small Color offset for subtle tonal wandering. At depth=0, offset is always 0. At depth=1, offset swings ±0.05 (MAX_OFFSET). Intermediate depths scale linearly.
+
+The triangle wave maps phase [0,1) → [-1,+1] via a symmetric piecewise-linear function. Phase advances by `BASE_FREQ_HZ / sampleRate` per sample, accumulated per-block in `nextBlock(frames)`. Depth changes are smoothed via a one-pole filter using closed-form per-block stepping (`1 - (1-alpha)^frames`, matching ParameterSmoother.nextBlock), with a 200 ms time constant to avoid abrupt jumps.
+
+Key design: `@Volatile` depth target for cross-thread safety; `nextBlock` called once per render buffer; phase always advances (even at depth=0) to avoid jump when depth is re-enabled. Allocation-free — no object creation in the hot path.
+
+Tests: T47 (depth=0 → zero offset over 60 s), T47b (depth returns to zero after being nonzero), T48 (depth=1 → multiple distinct offset values over 30 s), T48b (offset bounded by ±MAX_OFFSET over 60 s), T48c (offset changes sign over a full period), T48d (depth=0.5 peak ≈ half of depth=1.0 peak), plus reset edge-case test.
+
+One decision closed: D-33 (Micro-drift mechanism: slow triangle LFO at 0.05 Hz, ±0.05 max offset, depth-scaled).

@@ -207,10 +207,10 @@ Rationale: All-pass preserves frequency content (spectral tilt from Color stays 
 Revisit if: headphone testing reveals the all-pass width is too subtle, in which case a short FIR decorrelation filter could add more spatial depth.
 
 D-33: Micro-drift mechanism — slow LFO modulating Color offset
-Date: 2026-04-18 | Status: Open
+Date: 2026-04-18 | Status: Closed
 Priority: Nice-to-have
-Decision: MicroDrift generates a slow LFO (0.02–0.1 Hz) that produces a small Color offset added to the user's Color value before SpectralShaper. Depth parameter [0, 1] scales the maximum offset (e.g., ±0.05 at depth=1.0). The effective Color is clamped to [0, 1].
-Rationale: Creates a very slow, subtle tonal wandering that makes the noise feel more organic and alive without being attention-grabbing. Modulating Color reuses the existing spectral shaping pipeline — no new DSP topology needed. The drift rate is well below conscious perception (~15–60 second cycle).
+Decision: MicroDrift generates a triangle-wave LFO at 0.05 Hz (~20 s period) that produces a Color offset scaled by depth × MAX_OFFSET (±0.05 at depth=1.0). Depth smoothed via closed-form one-pole (200 ms). Phase always advances regardless of depth to avoid jumps on re-enable.
+Rationale: Creates a very slow, subtle tonal wandering that makes the noise feel more organic and alive without being attention-grabbing. Modulating Color reuses the existing spectral shaping pipeline — no new DSP topology needed. The drift rate is well below conscious perception (~20 second cycle).
 Revisit if: the drift is perceptible as a rhythmic pattern (would need to switch from periodic LFO to random walk).
 
 D-34: Fade duration configurability — picker with fixed options
