@@ -199,6 +199,18 @@ class PlaybackService : Service(), PlaybackController, TimerController {
         if (e != null) e.snapGain(gain) else pendingSnapGain = gain
     }
 
+    override fun setTexture(texture: Float) {
+        engine?.setTexture(texture)
+    }
+
+    override fun setStereoWidth(width: Float) {
+        engine?.setStereoWidth(width)
+    }
+
+    override fun setMicroDriftDepth(depth: Float) {
+        engine?.setMicroDriftDepth(depth)
+    }
+
     // -- Audio focus -------------------------------------------------------
 
     private fun requestFocus(): Boolean {

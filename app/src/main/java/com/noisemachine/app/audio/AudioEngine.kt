@@ -5,11 +5,10 @@ import kotlin.concurrent.withLock
 
 /**
  * Owns the playback render thread and orchestrates the per-buffer pipeline:
- * `NoiseSource → SpectralShaper → GainSafety → StereoStage → AudioSink`.
- *
- * Phase 2 scope: full Color engine wired — ParameterSmoother drives
- * SpectralShaper and GainSafety per buffer. StereoStage is still
- * restrained-stereo (identical channels, D-5).
+ * ```
+ * NoiseSource → SpectralShaper(color + drift) → TextureShaper → GainSafety
+ *   → masterGain → StereoStage → AudioSink
+ * ```
  *
  * Lifecycle:
  * - [start] is idempotent — a second call while already playing is a no-op.
@@ -21,7 +20,7 @@ import kotlin.concurrent.withLock
  * - Render thread is a single dedicated `Thread`, recreated per session.
  * - Lifecycle methods are called from the lifecycle-control thread (UI /
  *   ViewModel / Service); they never touch the render thread's local state.
- * - [setColor] writes to the [ParameterSmoother]'s `@Volatile` target —
+ * - Parameter setters write to `@Volatile` targets in smoothers / MicroDrift —
  *   safe to call from any thread without locking.
  * - Engine state visible across threads is a single `@Volatile Boolean`
  *   (`running`) — the render loop polls it once per buffer.
@@ -29,13 +28,9 @@ import kotlin.concurrent.withLock
  * Allocation discipline:
  * - Render-loop buffers (`monoBuf`, `stereoBuf`) are allocated once at the
  *   top of each session and reused for the full session.
- * - The hot loop calls only `NoiseSource.fill`, `SpectralShaper.process`,
- *   `GainSafety.process`, primitive math, and `AudioSink.write` — none
- *   of which allocate.
+ * - The hot loop calls only allocation-free DSP methods and `AudioSink.write`.
  *
- * @param sinkFactory creates a fresh [AudioSink] for each session. The engine
- *   never reuses a sink across `stop()` / `start()` because production sinks
- *   wrap single-use `AudioTrack` instances.
+ * @param sinkFactory creates a fresh [AudioSink] for each session.
  * @param noiseFactory creates a fresh [NoiseSource] for each session.
  * @param sampleRateHz output sample rate (D-7: 44100).
  */
@@ -60,50 +55,57 @@ class AudioEngine(
         timeSeconds = 0.05f,
     )
 
-    /** Smoothed master gain for fade-in/fade-out (D-21). UI thread writes target; render thread reads. */
+    /** Smoothed master gain for fade-in/fade-out (D-21). */
     private val gainSmoother = ParameterSmoother(
         initialValue = 1f,
         sampleRate = sampleRateHz,
         timeSeconds = fadeTimeSeconds,
     )
 
+    /** Smoothed Texture parameter. */
+    private val textureSmoother = ParameterSmoother(
+        initialValue = 0f,
+        sampleRate = sampleRateHz,
+        timeSeconds = 0.05f,
+    )
+
+    /** Smoothed stereo width parameter. */
+    private val stereoWidthSmoother = ParameterSmoother(
+        initialValue = 0f,
+        sampleRate = sampleRateHz,
+        timeSeconds = 0.05f,
+    )
+
+    /** Micro-drift LFO — depth target is @Volatile, LFO state is render-thread only. */
+    private var microDrift: MicroDrift? = null
+
     override val isPlaying: Boolean
         get() = running
 
-    /**
-     * Set the Color parameter. Safe to call from any thread at any time.
-     * The value is smoothed by [ParameterSmoother] on the render thread.
-     *
-     * @param color spectral tilt in [0.0, 1.0]; 0 = white, 1 = brown-like
-     */
     override fun setColor(color: Float) {
         colorSmoother.setTarget(color.coerceIn(0f, 1f))
     }
 
-    /**
-     * Set the master gain for fade-in/fade-out. Safe to call from any thread.
-     * The value is smoothed by [ParameterSmoother] on the render thread.
-     *
-     * @param gain master gain in [0.0, 1.0]; 0 = silent, 1 = full volume
-     */
     override fun setGain(gain: Float) {
         gainSmoother.setTarget(gain.coerceIn(0f, 1f))
     }
 
-    /**
-     * Instantly set the master gain, bypassing the smoother ramp.
-     * Used to initialize gain before starting playback (e.g., snap to 0
-     * before a fade-in). Must be called before [start] or while stopped.
-     */
     override fun snapGain(gain: Float) {
         gainSmoother.snapTo(gain.coerceIn(0f, 1f))
     }
 
-    /**
-     * Begin playback. No-op if already playing. Returns once the render
-     * thread has been launched (the first audio buffer may not yet have been
-     * delivered to the sink).
-     */
+    override fun setTexture(texture: Float) {
+        textureSmoother.setTarget(texture.coerceIn(0f, 1f))
+    }
+
+    override fun setStereoWidth(width: Float) {
+        stereoWidthSmoother.setTarget(width.coerceIn(0f, 1f))
+    }
+
+    override fun setMicroDriftDepth(depth: Float) {
+        microDrift?.setDepth(depth.coerceIn(0f, 1f))
+    }
+
     override fun start() = lock.withLock {
         if (running) return@withLock
 
@@ -113,10 +115,14 @@ class AudioEngine(
         running = true
         val noise = noiseFactory()
         val shaper = SpectralShaper(sampleRateHz)
+        val textureShaper = TextureShaper()
         val safety = GainSafety(sampleRateHz)
+        val stereoStage = StereoStage()
+        val drift = MicroDrift(sampleRateHz)
+        microDrift = drift
 
         val thread = Thread(
-            { renderLoop(sink, noise, shaper, safety, framesPerWrite) },
+            { renderLoop(sink, noise, shaper, textureShaper, safety, stereoStage, drift, framesPerWrite) },
             "noise-render",
         )
         thread.priority = Thread.MAX_PRIORITY
@@ -124,23 +130,16 @@ class AudioEngine(
         thread.start()
     }
 
-    /**
-     * Stop playback. No-op if already stopped. Blocks until the render thread
-     * has drained out and the sink has been closed.
-     */
     override fun stop() = lock.withLock {
         if (!running) return@withLock
 
         running = false
         val thread = renderThread
         renderThread = null
+        microDrift = null
 
-        // Render loop will observe running=false on the next iteration boundary
-        // and exit, then we close the sink. The thread joins itself.
         thread?.join(JOIN_TIMEOUT_MS)
         if (thread != null && thread.isAlive) {
-            // Safety net: thread should have observed running=false within one
-            // sink.write() worth of time. If not, surface it loudly.
             error("AudioEngine render thread failed to stop within ${JOIN_TIMEOUT_MS}ms")
         }
     }
@@ -149,19 +148,29 @@ class AudioEngine(
         sink: AudioSink,
         noise: NoiseSource,
         shaper: SpectralShaper,
+        textureShaper: TextureShaper,
         safety: GainSafety,
+        stereoStage: StereoStage,
+        drift: MicroDrift,
         framesPerWrite: Int,
     ) {
         val monoBuf = FloatArray(framesPerWrite)
         val stereoBuf = ShortArray(framesPerWrite * CHANNELS)
         try {
             while (running) {
-                // Read smoothed Color value, advancing by one buffer's worth of samples.
+                // Read smoothed parameters, advancing by one buffer's worth.
                 val color = colorSmoother.nextBlock(framesPerWrite)
+                val texture = textureSmoother.nextBlock(framesPerWrite)
+                val width = stereoWidthSmoother.nextBlock(framesPerWrite)
+
+                // MicroDrift offset added to Color for subtle tonal wandering.
+                val driftOffset = drift.nextBlock(framesPerWrite)
+                val effectiveColor = (color + driftOffset).coerceIn(0f, 1f)
 
                 noise.fill(monoBuf, framesPerWrite)
-                shaper.process(monoBuf, framesPerWrite, color)
-                safety.process(monoBuf, framesPerWrite, color)
+                shaper.process(monoBuf, framesPerWrite, effectiveColor)
+                textureShaper.process(monoBuf, framesPerWrite, texture)
+                safety.process(monoBuf, framesPerWrite, effectiveColor)
 
                 // Apply master gain (fade-in/fade-out). Post-GainSafety so
                 // the hard-clip guarantee is preserved (gain ≤ 1.0).
@@ -172,37 +181,11 @@ class AudioEngine(
                     g++
                 }
 
-                floatMonoToInt16Stereo(monoBuf, stereoBuf, framesPerWrite)
+                stereoStage.processToStereo(monoBuf, stereoBuf, framesPerWrite, width)
                 sink.write(stereoBuf, framesPerWrite)
             }
         } finally {
-            // Always close the sink on the render thread to keep ownership
-            // single-threaded between open() and close().
             sink.close()
-        }
-    }
-
-    /**
-     * Convert mono Float samples in `[-1.0f, 1.0f]` into interleaved stereo
-     * Int16 samples in `[-32768, 32767]`. Restrained-stereo (D-5): both
-     * channels carry the identical sample. Clip-safe at the rails.
-     *
-     * Allocation-free; no boxing.
-     */
-    private fun floatMonoToInt16Stereo(mono: FloatArray, stereo: ShortArray, frames: Int) {
-        var i = 0
-        var j = 0
-        while (i < frames) {
-            val v = mono[i]
-            val s: Short = when {
-                v >= 1.0f -> Short.MAX_VALUE
-                v <= -1.0f -> Short.MIN_VALUE
-                else -> (v * 32767.0f).toInt().toShort()
-            }
-            stereo[j] = s
-            stereo[j + 1] = s
-            i++
-            j += 2
         }
     }
 

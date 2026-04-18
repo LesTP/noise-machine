@@ -92,6 +92,10 @@ class PlaybackViewModelTest {
         override fun snapGain(gain: Float) {
             lastSnapGain = gain
         }
+
+        override fun setTexture(texture: Float) {}
+        override fun setStereoWidth(width: Float) {}
+        override fun setMicroDriftDepth(depth: Float) {}
     }
 
     /**

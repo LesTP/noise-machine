@@ -18,4 +18,7 @@ interface PlaybackController {
     fun setColor(color: Float)
     fun setGain(gain: Float)
     fun snapGain(gain: Float)
+    fun setTexture(texture: Float)
+    fun setStereoWidth(width: Float)
+    fun setMicroDriftDepth(depth: Float)
 }

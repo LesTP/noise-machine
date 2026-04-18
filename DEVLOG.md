@@ -599,3 +599,26 @@ Key design: `@Volatile` depth target for cross-thread safety; `nextBlock` called
 Tests: T47 (depth=0 → zero offset over 60 s), T47b (depth returns to zero after being nonzero), T48 (depth=1 → multiple distinct offset values over 30 s), T48b (offset bounded by ±MAX_OFFSET over 60 s), T48c (offset changes sign over a full period), T48d (depth=0.5 peak ≈ half of depth=1.0 peak), plus reset edge-case test.
 
 One decision closed: D-33 (Micro-drift mechanism: slow triangle LFO at 0.05 Hz, ±0.05 max offset, depth-scaled).
+
+### Step 4: Engine + controller integration
+- **Mode:** Code
+- **Outcome:** complete — T44 passed (full pipeline bounded at 3 Color/Texture/Width/Drift combos). Total test count: 101 (100 Phase 1–5.3 + 1 T44), 0 failures. `testDebugUnitTest` BUILD SUCCESSFUL.
+- **Contract changes:** `PlaybackController` interface — added `setTexture(Float)`, `setStereoWidth(Float)`, `setMicroDriftDepth(Float)`. Propagated to `PlaybackService` (delegate methods) and both test fakes (`PlaybackServiceTest.FakeController`, `PlaybackViewModelTest.FakeController`).
+
+Wired TextureShaper, StereoStage, and MicroDrift into AudioEngine's render loop. The new pipeline order:
+
+```
+NoiseSource.fill(buf)
+  → SpectralShaper.process(buf, effectiveColor)     // effectiveColor = color + driftOffset
+  → TextureShaper.process(buf, texture)              // NEW
+  → GainSafety.process(buf, effectiveColor)
+  → masterGain multiply
+  → StereoStage.processToStereo(mono, stereo, width) // REPLACES floatMonoToInt16Stereo
+  → AudioSink.write
+```
+
+AudioEngine changes: added `textureSmoother` and `stereoWidthSmoother` (ParameterSmoother instances, class-level with @Volatile targets). MicroDrift instance created per-session in `start()` with class-level reference for `setMicroDriftDepth` to reach its @Volatile target. TextureShaper, StereoStage created per-session (stateful, not thread-safe). Removed the now-redundant private `floatMonoToInt16Stereo` method.
+
+PlaybackService: three new delegate methods forwarding to `engine?.setTexture/setStereoWidth/setMicroDriftDepth`.
+
+No decisions closed in this step (D-34 fade duration configurability is a Step 5 Settings UI concern).

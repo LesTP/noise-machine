@@ -70,6 +70,10 @@ class PlaybackServiceTest {
         override fun snapGain(gain: Float) {
             snapGainCalls.add(gain)
         }
+
+        override fun setTexture(texture: Float) {}
+        override fun setStereoWidth(width: Float) {}
+        override fun setMicroDriftDepth(depth: Float) {}
     }
 
     @Before

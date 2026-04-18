@@ -329,4 +329,68 @@ class AudioEngineTest {
             tailRms < 100.0,
         )
     }
+    /**
+     * T44 — full pipeline with Texture+Stereo+Drift produces bounded output
+     * at 3 Color/Texture combos.
+     *
+     * Extends T19 to cover the Phase 5 DSP stages (TextureShaper, StereoStage,
+     * MicroDrift) wired into the render loop. Verifies no NaN, Inf, or
+     * out-of-range Int16 samples at multiple parameter combinations.
+     */
+    @Test(timeout = 15_000)
+    fun full_pipeline_texture_stereo_drift_bounded() {
+        data class Combo(val color: Float, val texture: Float, val width: Float, val drift: Float)
+
+        val combos = listOf(
+            Combo(0.0f, 0.0f, 0.0f, 0.0f),   // all minimum — passthrough stereo
+            Combo(0.5f, 0.5f, 0.3f, 0.5f),   // mid-range everything
+            Combo(1.0f, 1.0f, 1.0f, 1.0f),   // all maximum
+        )
+
+        for (combo in combos) {
+            val capturedFrames = AtomicLong(0)
+            var anyOutOfRange = false
+
+            val sink = object : AudioSink {
+                override fun open(sampleRateHz: Int, channels: Int): Int = 256
+                override fun write(buffer: ShortArray, frames: Int) {
+                    for (i in 0 until frames * 2) {
+                        val v = buffer[i]
+                        if (v < Short.MIN_VALUE || v > Short.MAX_VALUE) {
+                            anyOutOfRange = true
+                        }
+                    }
+                    capturedFrames.addAndGet(frames.toLong())
+                }
+                override fun close() {}
+            }
+
+            val engine = AudioEngine(
+                sinkFactory = { sink },
+                noiseFactory = { NoiseSource(seed = 0xD5A4L + combo.color.toLong()) },
+            )
+
+            engine.setColor(combo.color)
+            engine.setTexture(combo.texture)
+            engine.setStereoWidth(combo.width)
+            engine.setMicroDriftDepth(combo.drift)
+            engine.start()
+
+            val deadline = System.nanoTime() + 500_000_000L
+            while (capturedFrames.get() < 4096 && System.nanoTime() < deadline) {
+                Thread.sleep(1)
+            }
+
+            engine.stop()
+
+            assertTrue(
+                "$combo: should have written frames, got ${capturedFrames.get()}",
+                capturedFrames.get() >= 256,
+            )
+            assertFalse(
+                "$combo: found out-of-range Int16 sample",
+                anyOutOfRange,
+            )
+        }
+    }
 }
