@@ -154,6 +154,7 @@ class PlaybackViewModel(
             try {
                 controller.snapGain(0f)
                 controller.start()
+                applyCurrentParams()
                 controller.setFadeTime(fadeInMs / 1000f / 5f)
                 controller.setGain(1f)
             } catch (_: Throwable) {
@@ -167,6 +168,7 @@ class PlaybackViewModel(
         } else {
             try {
                 controller.start()
+                applyCurrentParams()
                 _state.value = PlaybackState.Playing
             } catch (_: Throwable) {
                 _state.value = PlaybackState.Idle
@@ -225,6 +227,14 @@ class PlaybackViewModel(
             }
             _state.value = PlaybackState.Idle
         }
+    }
+
+    /** Re-apply all DSP parameters after engine (re)creation. */
+    private fun applyCurrentParams() {
+        controller.setColor(_color.value)
+        controller.setTexture(_texture.value)
+        controller.setStereoWidth(_stereoWidth.value)
+        controller.setMicroDriftDepth(_microDriftDepth.value)
     }
 
     public override fun onCleared() {

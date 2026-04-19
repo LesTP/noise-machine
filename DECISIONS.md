@@ -209,7 +209,7 @@ Revisit if: headphone testing reveals the all-pass width is too subtle, in which
 D-33: Micro-drift mechanism — slow LFO modulating Color offset
 Date: 2026-04-18 | Status: Closed
 Priority: Nice-to-have
-Decision: MicroDrift generates a triangle-wave LFO at 0.05 Hz (~20 s period) that produces a Color offset scaled by depth × MAX_OFFSET (±0.05 at depth=1.0). Depth smoothed via closed-form one-pole (200 ms). Phase always advances regardless of depth to avoid jumps on re-enable.
+Decision: MicroDrift generates a triangle-wave LFO at 0.05 Hz (~20 s period) that produces a Color offset scaled by depth × MAX_OFFSET (±0.20 at depth=1.0). Depth smoothed via closed-form one-pole (200 ms). Phase always advances regardless of depth to avoid jumps on re-enable. (MAX_OFFSET tuned up from initial 0.05 after on-device testing — user feedback that drift was too subtle.)
 Rationale: Creates a very slow, subtle tonal wandering that makes the noise feel more organic and alive without being attention-grabbing. Modulating Color reuses the existing spectral shaping pipeline — no new DSP topology needed. The drift rate is well below conscious perception (~20 second cycle).
 Revisit if: the drift is perceptible as a rhythmic pattern (would need to switch from periodic LFO to random walk).
 

@@ -5,7 +5,7 @@ import kotlin.math.PI
 /**
  * Output safety stage: DC blocker + gain compensation + hard clip.
  *
- * Sits after [SpectralShaper] in the render pipeline and ensures the
+ * Sits after [TextureShaper] in the render pipeline and ensures the
  * output is clean and bounded regardless of Color value.
  *
  * Three stages applied in order:

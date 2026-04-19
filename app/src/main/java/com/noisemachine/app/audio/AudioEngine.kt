@@ -77,6 +77,7 @@ class AudioEngine(
     )
 
     /** Micro-drift LFO — depth target is @Volatile, LFO state is render-thread only. */
+    @Volatile
     private var microDrift: MicroDrift? = null
 
     override val isPlaying: Boolean

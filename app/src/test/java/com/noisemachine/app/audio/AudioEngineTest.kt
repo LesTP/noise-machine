@@ -373,8 +373,8 @@ class AudioEngineTest {
             engine.setColor(combo.color)
             engine.setTexture(combo.texture)
             engine.setStereoWidth(combo.width)
-            engine.setMicroDriftDepth(combo.drift)
             engine.start()
+            engine.setMicroDriftDepth(combo.drift)
 
             val deadline = System.nanoTime() + 500_000_000L
             while (capturedFrames.get() < 4096 && System.nanoTime() < deadline) {
