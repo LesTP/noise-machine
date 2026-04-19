@@ -22,9 +22,9 @@ class SharedPrefsStore(context: Context) : PrefsStore {
         get() = prefs.getFloat(KEY_TEXTURE, DEFAULT_TEXTURE)
         set(value) { prefs.edit().putFloat(KEY_TEXTURE, value).apply() }
 
-    override var stereoEnabled: Boolean
-        get() = prefs.getBoolean(KEY_STEREO_ENABLED, DEFAULT_STEREO_ENABLED)
-        set(value) { prefs.edit().putBoolean(KEY_STEREO_ENABLED, value).apply() }
+    override var stereoWidth: Float
+        get() = prefs.getFloat(KEY_STEREO_WIDTH, DEFAULT_STEREO_WIDTH)
+        set(value) { prefs.edit().putFloat(KEY_STEREO_WIDTH, value).apply() }
 
     override var microDriftDepth: Float
         get() = prefs.getFloat(KEY_MICRO_DRIFT_DEPTH, DEFAULT_MICRO_DRIFT_DEPTH)
@@ -43,14 +43,14 @@ class SharedPrefsStore(context: Context) : PrefsStore {
         private const val KEY_COLOR = "color"
         private const val KEY_TIMER_DURATION = "timer_duration_ms"
         private const val KEY_TEXTURE = "texture"
-        private const val KEY_STEREO_ENABLED = "stereo_enabled"
+        private const val KEY_STEREO_WIDTH = "stereo_width"
         private const val KEY_MICRO_DRIFT_DEPTH = "micro_drift_depth"
         private const val KEY_FADE_IN_MS = "fade_in_ms"
         private const val KEY_FADE_OUT_MS = "fade_out_ms"
         private const val DEFAULT_COLOR = 0f
         private const val DEFAULT_TIMER_DURATION = 0L
         private const val DEFAULT_TEXTURE = 0f
-        private const val DEFAULT_STEREO_ENABLED = false
+        private const val DEFAULT_STEREO_WIDTH = 0f
         private const val DEFAULT_MICRO_DRIFT_DEPTH = 0f
         private const val DEFAULT_FADE_IN_MS = 2_000L
         private const val DEFAULT_FADE_OUT_MS = 5_000L

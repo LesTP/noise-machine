@@ -52,8 +52,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -197,7 +195,7 @@ fun NoiseMachineApp(
     val color by viewModel.color.collectAsStateWithLifecycle()
     val timerState by viewModel.timerState.collectAsStateWithLifecycle()
     val texture by viewModel.texture.collectAsStateWithLifecycle()
-    val stereoEnabled by viewModel.stereoEnabled.collectAsStateWithLifecycle()
+    val stereoWidth by viewModel.stereoWidth.collectAsStateWithLifecycle()
     val microDriftDepth by viewModel.microDriftDepth.collectAsStateWithLifecycle()
     val fadeInMs by viewModel.fadeInMsFlow.collectAsStateWithLifecycle()
     val fadeOutMs by viewModel.fadeOutMsFlow.collectAsStateWithLifecycle()
@@ -215,8 +213,8 @@ fun NoiseMachineApp(
             SettingsScreen(
                 texture = texture,
                 onTextureChanged = viewModel::onTextureChanged,
-                stereoEnabled = stereoEnabled,
-                onStereoToggled = viewModel::onStereoToggled,
+                stereoWidth = stereoWidth,
+                onStereoWidthChanged = viewModel::onStereoWidthChanged,
                 microDriftDepth = microDriftDepth,
                 onMicroDriftDepthChanged = viewModel::onMicroDriftDepthChanged,
                 fadeInMs = fadeInMs,
@@ -424,8 +422,8 @@ private fun MainScreen(
 private fun SettingsScreen(
     texture: Float,
     onTextureChanged: (Float) -> Unit,
-    stereoEnabled: Boolean,
-    onStereoToggled: (Boolean) -> Unit,
+    stereoWidth: Float,
+    onStereoWidthChanged: (Float) -> Unit,
     microDriftDepth: Float,
     onMicroDriftDepthChanged: (Float) -> Unit,
     fadeInMs: Long,
@@ -480,24 +478,12 @@ private fun SettingsScreen(
 
             Spacer(Modifier.height(20.dp))
 
-            // Stereo toggle
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("Stereo", color = MutedBlue, style = MaterialTheme.typography.titleMedium)
-                Switch(
-                    checked = stereoEnabled,
-                    onCheckedChange = onStereoToggled,
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = MutedBlue,
-                        checkedTrackColor = DimBlue,
-                        uncheckedThumbColor = DimBlue,
-                        uncheckedTrackColor = DarkNavy,
-                    ),
-                )
-            }
+            // Stereo width slider
+            SliderSetting(
+                title = "Stereo (none \u2194 wide)",
+                value = stereoWidth,
+                onValueChange = onStereoWidthChanged,
+            )
 
             Spacer(Modifier.height(24.dp))
             HorizontalDivider(color = DimBlue)
@@ -666,8 +652,8 @@ private fun SettingsScreenPreview() {
         SettingsScreen(
             texture = 0.3f,
             onTextureChanged = {},
-            stereoEnabled = true,
-            onStereoToggled = {},
+            stereoWidth = 0.3f,
+            onStereoWidthChanged = {},
             microDriftDepth = 0.2f,
             onMicroDriftDepthChanged = {},
             fadeInMs = 2000L,

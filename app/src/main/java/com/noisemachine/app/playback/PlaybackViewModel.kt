@@ -51,8 +51,8 @@ class PlaybackViewModel(
     private val _texture = MutableStateFlow(0f)
     val texture: StateFlow<Float> = _texture.asStateFlow()
 
-    private val _stereoEnabled = MutableStateFlow(false)
-    val stereoEnabled: StateFlow<Boolean> = _stereoEnabled.asStateFlow()
+    private val _stereoWidth = MutableStateFlow(0f)
+    val stereoWidth: StateFlow<Float> = _stereoWidth.asStateFlow()
 
     private val _microDriftDepth = MutableStateFlow(0f)
     val microDriftDepth: StateFlow<Float> = _microDriftDepth.asStateFlow()
@@ -83,9 +83,9 @@ class PlaybackViewModel(
             _texture.value = savedTexture
             controller.setTexture(savedTexture)
 
-            val savedStereo = it.stereoEnabled
-            _stereoEnabled.value = savedStereo
-            controller.setStereoWidth(if (savedStereo) STEREO_WIDTH_ON else 0f)
+            val savedStereo = it.stereoWidth.coerceIn(0f, 1f)
+            _stereoWidth.value = savedStereo
+            controller.setStereoWidth(savedStereo)
 
             val savedDrift = it.microDriftDepth.coerceIn(0f, 1f)
             _microDriftDepth.value = savedDrift
@@ -115,10 +115,11 @@ class PlaybackViewModel(
         prefs?.let { it.texture = t }
     }
 
-    fun onStereoToggled(enabled: Boolean) {
-        _stereoEnabled.value = enabled
-        controller.setStereoWidth(if (enabled) STEREO_WIDTH_ON else 0f)
-        prefs?.let { it.stereoEnabled = enabled }
+    fun onStereoWidthChanged(width: Float) {
+        val w = width.coerceIn(0f, 1f)
+        _stereoWidth.value = w
+        controller.setStereoWidth(w)
+        prefs?.let { it.stereoWidth = w }
     }
 
     fun onMicroDriftDepthChanged(depth: Float) {
@@ -266,7 +267,5 @@ class PlaybackViewModel(
         const val DEFAULT_FADE_IN_MS = 2_000L
         /** Default fade-out duration (D-25). */
         const val DEFAULT_FADE_OUT_MS = 5_000L
-        /** Fixed stereo width when enabled (restrained per D-5). */
-        private const val STEREO_WIDTH_ON = 0.3f
     }
 }

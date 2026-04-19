@@ -110,7 +110,7 @@ class MicroDrift(private val sampleRate: Int = 44_100) {
         const val BASE_FREQ_HZ = 0.05
 
         /** Maximum Color offset at depth=1. */
-        const val MAX_OFFSET = 0.05f
+        const val MAX_OFFSET = 0.20f
 
         /** Depth values below this are treated as zero. */
         private const val DEPTH_EPSILON = 0.0001f

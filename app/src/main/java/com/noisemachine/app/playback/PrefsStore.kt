@@ -8,7 +8,7 @@ interface PrefsStore {
     var color: Float
     var timerDurationMs: Long
     var texture: Float
-    var stereoEnabled: Boolean
+    var stereoWidth: Float
     var microDriftDepth: Float
     var fadeInMs: Long
     var fadeOutMs: Long

@@ -507,7 +507,7 @@ class PlaybackViewModelTest {
         override var color: Float = 0f,
         override var timerDurationMs: Long = 0L,
         override var texture: Float = 0f,
-        override var stereoEnabled: Boolean = false,
+        override var stereoWidth: Float = 0f,
         override var microDriftDepth: Float = 0f,
         override var fadeInMs: Long = 0L,
         override var fadeOutMs: Long = 0L,
