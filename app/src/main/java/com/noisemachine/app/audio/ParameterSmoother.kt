@@ -27,7 +27,7 @@ package com.noisemachine.app.audio
  */
 class ParameterSmoother(
     initialValue: Float,
-    sampleRate: Int = 44_100,
+    private val sampleRate: Int = 44_100,
     timeSeconds: Float = 0.05f,
 ) {
     @Volatile
@@ -35,12 +35,8 @@ class ParameterSmoother(
 
     private var current: Float = initialValue
 
-    private val alpha: Float = if (timeSeconds <= 0f || sampleRate <= 0) {
-        1.0f
-    } else {
-        val tau = sampleRate.toFloat() * timeSeconds
-        1.0f - kotlin.math.exp(-1.0f / tau)
-    }
+    @Volatile
+    private var alpha: Float = computeAlpha(sampleRate, timeSeconds)
 
     /**
      * Set the ramp target. Safe to call from any thread.
@@ -56,7 +52,8 @@ class ParameterSmoother(
      */
     fun next(): Float {
         val t = target // single volatile read
-        current += (t - current) * alpha
+        val a = alpha  // single volatile read
+        current += (t - current) * a
         return current
     }
 
@@ -72,10 +69,11 @@ class ParameterSmoother(
      */
     fun nextBlock(samples: Int): Float {
         val t = target // single volatile read
-        if (alpha >= 1f) {
+        val a = alpha  // single volatile read
+        if (a >= 1f) {
             current = t
         } else {
-            val retain = kotlin.math.exp(samples.toFloat() * kotlin.math.ln(1f - alpha))
+            val retain = kotlin.math.exp(samples.toFloat() * kotlin.math.ln(1f - a))
             current += (t - current) * (1f - retain)
         }
         return current
@@ -89,5 +87,22 @@ class ParameterSmoother(
     fun snapTo(value: Float) {
         target = value
         current = value
+    }
+
+    /**
+     * Update the ramp time constant. Safe to call from any thread.
+     * Takes effect on the next [next]/[nextBlock] call.
+     */
+    fun setTimeSeconds(timeSeconds: Float) {
+        alpha = computeAlpha(sampleRate, timeSeconds)
+    }
+
+    companion object {
+        private fun computeAlpha(sampleRate: Int, timeSeconds: Float): Float =
+            if (timeSeconds <= 0f || sampleRate <= 0) 1.0f
+            else {
+                val tau = sampleRate.toFloat() * timeSeconds
+                1.0f - kotlin.math.exp(-1.0f / tau)
+            }
     }
 }

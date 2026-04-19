@@ -654,7 +654,40 @@ Two decisions closed: D-34 (fade picker), D-35 (POST_NOTIFICATIONS flow).
 
 **App icon:**
 - Source `white_shell.png` (1024×1024 black-on-white conch shell) recolored to app theme: DarkNavy (#0F1A2E) background, MutedBlue (#5A7BAF) shell outline.
-- Android adaptive icon system: `mipmap-anydpi-v26/ic_launcher.xml` with separate `ic_launcher_foreground.png` (shell on transparent, 108dp canvas) and `ic_launcher_background.png` (solid DarkNavy). Shell fills the visible 72dp zone within the 108dp adaptive canvas.
+- Android adaptive icon system: `mipmap-anydpi-v26/ic_launcher.xml` with foreground layer `ic_launcher_foreground.png` (shell on transparent, 108dp canvas) and `@color/ic_launcher_background` (solid DarkNavy XML color resource — replaced per-density background PNGs).
 - Legacy `ic_launcher.png` retained for pre-Android 8 devices.
 - All 5 density buckets generated (mdpi through xxxhdpi).
-- Manifest updated: `android:icon="@mipmap/ic_launcher"`. Notification icon updated to `R.mipmap.ic_launcher`.
+- Manifest updated: `android:icon="@mipmap/ic_launcher"`.
+
+### Review fixes (post-Step 6)
+- **Mode:** Code
+- **Outcome:** complete — 101 unit tests pass, assembleDebug builds. All three code review findings resolved.
+- **Contract changes:** `PlaybackController` — added `setFadeTime(seconds: Float)`. Propagated to `AudioEngine`, `PlaybackService`, and both test fakes.
+
+**Dynamic fade timing (bug fix):**
+- Root cause: the gain smoother (`ParameterSmoother`) had a fixed time constant set at construction (default 2.0s). Changing fade duration in Settings had no effect on the actual audio ramp rate.
+- Fix: added `ParameterSmoother.setTimeSeconds()` to update `alpha` dynamically (`@Volatile var`). New `PlaybackController.setFadeTime()` interface method delegated through `AudioEngine` and `PlaybackService`.
+- ViewModel calls `setFadeTime(fadeMs / 1000f / 5f)` before each fade, so the smoother reaches ~99% within the chosen duration (5 time constants).
+- Critical ordering fix: `setFadeTime` must be called **after** `start()` during fade-in (engine is `null` before `start()`). Code review caught this — moved the call after `controller.start()` and before `controller.setGain(1f)`.
+
+**ParameterSmoother thread safety:**
+- `alpha` changed from `val` to `@Volatile var`. Both `next()` and `nextBlock()` now cache `alpha` into a local `val a` before use (single volatile read), consistent with the existing `target` caching pattern.
+
+**Brown noise volume boost:**
+- `GainSafety.GAIN_AT_BROWN` raised from 0.60 to 0.75. Compensates for perceptual volume drop at the dark end of the Color range — on-device testing confirmed brown sounded too quiet relative to white/pink.
+
+**About section text:**
+- Split into two paragraphs: "The Noise Machine generates ambient noise to mask distractions and help you sleep." / "The Color slider on the main screen shapes the tone from bright (AKA white noise) to balanced (AKA pink noise) to deep (AKA brown noise)."
+- In memoriam consolidated to single line.
+- Version number display removed from About section.
+- `getVersionName()` helper function removed (unused).
+
+**Notification icon:**
+- Created monochrome `ic_notification.png` (white shell on transparent background) for proper status bar rendering. Android notification small icons use only the alpha channel — the adaptive launcher icon was rendering as a solid blob.
+- Generated at 5 drawable densities (24dp mdpi through 96px xxxhdpi).
+- `PlaybackService` now uses `R.drawable.ic_notification` instead of `R.mipmap.ic_launcher`.
+
+**Icon asset cleanup:**
+- Replaced 5 per-density `ic_launcher_background.png` files with a single XML color resource `res/values/ic_launcher_background.xml` (`#0F1A2E`).
+- Adaptive icon XML updated: `android:drawable="@color/ic_launcher_background"`.
+- Deleted `app_icon_recolored.png` from project root (intermediate artifact).

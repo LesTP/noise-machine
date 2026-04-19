@@ -89,7 +89,7 @@ class GainSafety(sampleRate: Int = 44_100) {
         // Linear interpolation between these anchors.
         private const val GAIN_AT_WHITE = 0.85f  // Color=0
         private const val GAIN_AT_PINK = 0.95f   // Color=0.5
-        private const val GAIN_AT_BROWN = 0.60f  // Color=1.0
+        private const val GAIN_AT_BROWN = 0.75f  // Color=1.0
 
         /**
          * Static Color-indexed compensation gain. Piecewise linear

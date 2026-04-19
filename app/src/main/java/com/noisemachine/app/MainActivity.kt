@@ -525,9 +525,17 @@ private fun SettingsScreen(
             // ── About ──────────────────────────────────────────
             Text(
                 text = "The Noise Machine generates ambient noise to mask " +
-                    "distractions and help you sleep. The Color slider " +
-                    "shapes the tone from bright (white) through balanced " +
-                    "(pink) to deep (brown).",
+                    "distractions and help you sleep.",
+                color = MutedBlue.copy(alpha = 0.7f),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            Text(
+                text = "The Color slider on the main screen shapes the tone " +
+                    "from bright (AKA white noise) to balanced (AKA pink noise) " +
+                    "to deep (AKA brown noise).",
                 color = MutedBlue.copy(alpha = 0.7f),
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -550,12 +558,6 @@ private fun SettingsScreen(
             )
 
             Spacer(Modifier.height(16.dp))
-
-            Text(
-                text = "v${getVersionName()}",
-                color = MutedBlue.copy(alpha = 0.4f),
-                style = MaterialTheme.typography.bodySmall,
-            )
 
             Spacer(Modifier.height(32.dp))
         }
@@ -618,16 +620,6 @@ private fun FadePicker(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun getVersionName(): String {
-    val context = LocalContext.current
-    return try {
-        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "2.0"
-    } catch (_: Exception) {
-        "2.0"
     }
 }
 

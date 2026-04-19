@@ -74,6 +74,7 @@ class PlaybackServiceTest {
         override fun setTexture(texture: Float) {}
         override fun setStereoWidth(width: Float) {}
         override fun setMicroDriftDepth(depth: Float) {}
+        override fun setFadeTime(seconds: Float) {}
     }
 
     @Before

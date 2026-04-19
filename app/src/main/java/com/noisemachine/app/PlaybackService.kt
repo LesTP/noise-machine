@@ -211,6 +211,10 @@ class PlaybackService : Service(), PlaybackController, TimerController {
         engine?.setMicroDriftDepth(depth)
     }
 
+    override fun setFadeTime(seconds: Float) {
+        engine?.setFadeTime(seconds)
+    }
+
     // -- Audio focus -------------------------------------------------------
 
     private fun requestFocus(): Boolean {
@@ -264,7 +268,7 @@ class PlaybackService : Service(), PlaybackController, TimerController {
         ).build()
 
         return Notification.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("Noise Machine")
             .setContentText("Playing")
             .setOngoing(true)

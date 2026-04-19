@@ -106,6 +106,10 @@ class AudioEngine(
         microDrift?.setDepth(depth.coerceIn(0f, 1f))
     }
 
+    override fun setFadeTime(seconds: Float) {
+        gainSmoother.setTimeSeconds(seconds.coerceAtLeast(0f))
+    }
+
     override fun start() = lock.withLock {
         if (running) return@withLock
 

@@ -21,4 +21,5 @@ interface PlaybackController {
     fun setTexture(texture: Float)
     fun setStereoWidth(width: Float)
     fun setMicroDriftDepth(depth: Float)
+    fun setFadeTime(seconds: Float)
 }

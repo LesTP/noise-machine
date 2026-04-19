@@ -153,6 +153,7 @@ class PlaybackViewModel(
             try {
                 controller.snapGain(0f)
                 controller.start()
+                controller.setFadeTime(fadeInMs / 1000f / 5f)
                 controller.setGain(1f)
             } catch (_: Throwable) {
                 _state.value = PlaybackState.Idle
@@ -204,6 +205,7 @@ class PlaybackViewModel(
 
         if (fadeOutMs > 0 && current != PlaybackState.FadingOut) {
             _state.value = PlaybackState.FadingOut
+            controller.setFadeTime(fadeOutMs / 1000f / 5f)
             controller.setGain(0f)
             fadeJob = viewModelScope.launch {
                 delay(fadeOutMs)
