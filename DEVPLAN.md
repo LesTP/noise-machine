@@ -2,11 +2,11 @@
 module: core-playback
 phase: 5
 phase_title: Secondary Polish
-step: 6 of 6
-mode: Code
+step: complete
+mode: Review
 blocked: null
 regime: Build
-review_done: false
+review_done: true
 ---
 
 # Noise Machine — Development Plan
@@ -49,12 +49,14 @@ review_done: false
   - **Service-mediated method calls before engine creation are silently dropped.** If the service creates the engine inside `start()`, any `snapGain()`/`setGain()` calls made before `start()` go to a null engine. Buffer pending values and apply them when the engine is created.
   - **`POST_NOTIFICATIONS` requires runtime grant on API 33+.** Declaring it in the manifest is not enough. Without runtime permission, `startForeground()` succeeds but the notification is invisible.
   - **External stop triggers must route through the VM's state machine.** Notification intents and audio focus loss that call `service.stop()` directly bypass the VM's fade-out orchestration and leave `_state` stale. Use a callback (`onStopRequested`) wired from the composable.
+  - **DSP params must be re-applied after engine recreation.** ViewModel.init sets params while engine is null (no-op). After `controller.start()` creates a fresh engine, call `applyCurrentParams()` to push color/texture/stereoWidth/microDriftDepth to the new engine.
+  - **Android notification `setSmallIcon` must use a monochrome drawable.** Adaptive launcher icons render as solid blobs in the status bar. Create a separate `res/drawable/ic_notification` (white-on-transparent) at all density buckets.
   <!-- Add more operational knowledge as learned through trial-and-error. -->
 
 ## Current Status
 
-- **Phase** — 5: Secondary Polish — In progress (step 0 of 6, planning complete)
-- **Focus** — Settings screen expansion: Texture, Stereo, Micro-drift, Fade durations, About, POST_NOTIFICATIONS
+- **Phase** — 5: Secondary Polish — Complete
+- **Focus** — Phase completion
 - **Blocked/Broken** — None
 
 ## Phase 1: Core Playback — Complete
@@ -73,111 +75,6 @@ review_done: false
 
 5 steps, 26 service tests + 11 new VM/service tests (T32–T36, T37 = build verification), M31–M39 manual verification passed. 5 decisions closed (D-26–D-30). See DEVLOG.md §Phase 4.
 
-## Phase 5: Secondary Polish
+## Phase 5: Secondary Polish — Complete
 
-**Regime:** Build (Steps 1–5) + Refine (Step 6)
-
-Settings screen expansion with functional DSP controls for all deferred parameters, plus POST_NOTIFICATIONS fix.
-
-**Scope:**
-1. **Texture** — smooth ↔ grainy (zero-order hold decimation) — slider in Settings
-2. **Stereo width** — mono ↔ subtle spread (first-order all-pass decorrelation) — checkbox/slider in Settings
-3. **Micro-variation** — very slow spectral drift (slow LFO modulating Color offset) — depth slider in Settings
-4. **Fade durations** — configurable fade-in/fade-out lengths (currently read-only, make interactive)
-5. **About section** — app name, version, brief description
-6. **POST_NOTIFICATIONS** — runtime permission dialog on API 33+
-
-**DSP pipeline after Phase 5:**
-```
-NoiseSource.fill(buf)
-  → SpectralShaper.process(buf, color + microDriftOffset)
-  → TextureShaper.process(buf, texture)
-  → GainSafety.process(buf, color)
-  → masterGain multiply
-  → StereoStage.processToStereo(mono, stereo, width)
-  → AudioTrack.write
-```
-
-### Step 1: TextureShaper DSP (Build)
-- `TextureShaper.kt` — variable-rate zero-order hold (sample decimation). At texture=0, passthrough. At texture=1, hold each sample for MAX_HOLD frames (grainy). Allocation-free, not thread-safe.
-- `TextureShaper` inserts between SpectralShaper and GainSafety per ARCHITECTURE.md.
-- Tests: T38 (passthrough at texture=0), T39 (stepped output at texture=1), T40 (allocation-free).
-- Close D-31.
-
-### Step 2: StereoStage DSP (Build)
-- `StereoStage.kt` — first-order all-pass filter on R channel for phase-based decorrelation. Takes mono FloatArray + width parameter, outputs interleaved stereo ShortArray (replaces `floatMonoToInt16Stereo`). At width=0, identical channels (D-5). At width>0, subtle spatial spread.
-- Tests: T41 (identical L/R at width=0), T42 (different L/R at width>0), T43 (allocation-free + bounded).
-- Close D-32.
-
-### Step 3: MicroDrift DSP (Build)
-- `MicroDrift.kt` — slow LFO (0.02–0.1 Hz) producing a small Color offset. Render thread calls `nextBlock(framesPerWrite)` to get the current offset. Depth parameter [0,1] scales the maximum offset (e.g., ±0.05 at depth=1). Uses a smoothed triangle or sine wave backed by a ParameterSmoother for depth changes.
-- Tests: T47 (depth=0 → offset always 0), T48 (depth>0 → offset drifts over time).
-- Close D-33.
-
-### Step 4: Engine + controller integration (Build)
-- Wire TextureShaper, StereoStage, and MicroDrift into AudioEngine's render loop.
-- Add `setTexture(Float)`, `setStereoWidth(Float)`, `setMicroDriftDepth(Float)` to `PlaybackController`.
-- Add `setFadeInMs(Long)`, `setFadeOutMs(Long)` to `PlaybackController` (or VM-level, since fade is VM-orchestrated).
-- Smoothers for texture, stereo width, micro-drift depth (all ParameterSmoother instances).
-- Replace inline `floatMonoToInt16Stereo` with `StereoStage.processToStereo`.
-- Tests: T44 (full pipeline at 3 Color/Texture combos, bounded output).
-- Close D-34.
-
-### Step 5: Settings UI + persistence + About + permission (Build)
-- Expand Settings screen: Texture slider, Stereo width toggle/slider, Micro-drift depth slider, Fade-in/fade-out duration pickers.
-- About section: app name, version string, one-line description.
-- Expand `PrefsStore` with `texture`, `stereoWidth`, `microDriftDepth`, `fadeInMs`, `fadeOutMs`.
-- `PlaybackViewModel` restores new prefs at init, forwards changes to controller.
-- POST_NOTIFICATIONS runtime permission: `rememberLauncherForActivityResult(RequestPermission)` in MainActivity, triggered on first play.
-- Tests: T45 (assembleDebug compiles), T46 (POST_NOTIFICATIONS requested on API 33+).
-- Close D-35.
-
-### Step 6: Perceptual tuning + verification (Refine)
-- On-device verification M41–M55.
-- Tune texture hold range, stereo width range, micro-drift rate/depth.
-
-### Test Spec
-
-| ID | Component | Assertion |
-|----|-----------|-----------|
-| T38 | TextureShaper | texture=0 is passthrough — output matches input |
-| T39 | TextureShaper | texture=1 produces stepped output — adjacent samples often equal (>50% repeats) |
-| T40 | TextureShaper | Allocation-free (heap delta < 256 KB) |
-| T41 | StereoStage | width=0 → identical L/R channels |
-| T42 | StereoStage | width>0 → different L/R channels (cross-channel diff > 0) |
-| T43 | StereoStage | Allocation-free + all output samples finite and bounded |
-| T47 | MicroDrift | depth=0 → offset is always 0.0 |
-| T48 | MicroDrift | depth>0 → offset is non-constant after enough samples |
-| T44 | AudioEngine | Full pipeline Texture+Stereo+Drift — bounded output at 3 combos |
-| T45 | Build | `assembleDebug` with full Settings UI compiles |
-| T46 | Permission | POST_NOTIFICATIONS requested on API 33+ |
-
-### Manual Verification
-
-| ID | Check |
-|----|-------|
-| M41 | Texture slider visible and functional in Settings |
-| M42 | Texture=0 smooth, Texture=1 audibly grainier |
-| M43 | Texture changes don't cause large loudness swings |
-| M44 | Texture is orthogonal to Color |
-| M45 | Stereo produces subtle spread on headphones |
-| M46 | Stereo off = mono (identical channels) |
-| M47 | Micro-drift depth>0 produces slow, subtle tonal wandering |
-| M48 | Micro-drift depth=0 is inaudible (no drift) |
-| M49 | Fade-in duration adjustable in Settings, audibly different |
-| M50 | Fade-out duration adjustable in Settings, audibly different |
-| M51 | POST_NOTIFICATIONS dialog on API 33+ |
-| M52 | About section shows app name + version |
-| M53 | All settings persist across app kill + relaunch |
-| M54 | Timer + fade + texture + stereo + drift all work together |
-| M55 | Extended session (15+ min) — no glitches |
-
-### Decisions Queued
-
-| ID | Question | Leaning |
-|----|----------|---------|
-| D-31 | Texture DSP approach | Zero-order hold — orthogonal to Color, cheap, distinctive |
-| D-32 | Stereo decorrelation method | First-order all-pass on R channel — preserves spectral character |
-| D-33 | Micro-drift mechanism | Slow LFO (0.02–0.1 Hz) modulating Color offset, depth-scaled |
-| D-34 | Fade duration configurability | Picker: 0s / 1s / 2s / 5s / 10s for each direction |
-| D-35 | POST_NOTIFICATIONS flow | Request on first play; denied = invisible notification, playback works |
+6 steps + review fixes, 22 new unit tests (T38–T48 + variants), M41–M55 manual verification passed. 5 decisions closed (D-31–D-35), D-5/D-33 updated. See DEVLOG.md §Phase 5.

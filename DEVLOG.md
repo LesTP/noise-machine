@@ -691,3 +691,39 @@ Two decisions closed: D-34 (fade picker), D-35 (POST_NOTIFICATIONS flow).
 - Replaced 5 per-density `ic_launcher_background.png` files with a single XML color resource `res/values/ic_launcher_background.xml` (`#0F1A2E`).
 - Adaptive icon XML updated: `android:drawable="@color/ic_launcher_background"`.
 - Deleted `app_icon_recolored.png` from project root (intermediate artifact).
+
+### Stereo slider + drift range increase
+- **Mode:** Code
+- **Outcome:** complete — 101 unit tests pass, assembleDebug builds.
+- **Contract changes:** `PrefsStore` — `stereoEnabled: Boolean` → `stereoWidth: Float`. `PlaybackViewModel` — `onStereoToggled(Boolean)` → `onStereoWidthChanged(Float)`, `stereoEnabled: StateFlow<Boolean>` → `stereoWidth: StateFlow<Float>`.
+
+Converted stereo from a fixed-width toggle (Switch at 0/0.3) to a continuous slider (0.0–1.0). Users can dial in their preferred amount of all-pass decorrelation; max width is intentionally "too much" so the sweet spot is discoverable.
+
+MicroDrift `MAX_OFFSET` raised from 0.05 to 0.20 (±20% of Color range at depth=1.0). The previous ±5% was too subtle to be perceptible on-device. Same slider range (0–1), just a wider swing at the top.
+
+### Phase review
+- **Mode:** Review
+- **Outcome:** complete — 10 findings (3 must, 4 should, 3 optional), all fixed.
+- **Contract changes:** none (fixes only, no new APIs).
+
+**Must fix (applied):**
+1. Persisted DSP params (texture/stereoWidth/microDriftDepth) silently lost on every playback start — engine is null at VM init, never re-applied after `start()`. Added `applyCurrentParams()` helper called in both fade and immediate branches.
+2. ARCHITECTURE.md pipeline diagram, component map, coupling notes fully synchronized with reality.
+3. D-33 MAX_OFFSET updated to ±0.20 to match code.
+
+**Should fix (applied):**
+4. `microDrift` field in AudioEngine marked `@Volatile` — matches documented thread-safety contract.
+5. Duplicate spacers at end of SettingsScreen merged to single 16dp.
+6. Stale coupling notes in ARCHITECTURE.md updated (StereoStage, TextureShaper now described as implemented).
+7. D-5 updated — stereo is now a full user-controlled slider, superseding the original "restrained, deferred" decision.
+
+**Optional (applied):**
+8. Test T44 `setMicroDriftDepth` moved after `start()` for real drift coverage.
+9. GainSafety KDoc updated: "sits after TextureShaper."
+
+### Phase completion: Secondary Polish
+- **Mode:** Review
+- **Outcome:** complete — 101 unit tests pass, 0 failures. M41–M55 on-device verification passed. Phase review done, all findings resolved.
+- **Contract changes:** none.
+
+Phase 5 delivered 3 new DSP modules (TextureShaper, StereoStage, MicroDrift), full Settings UI expansion, POST_NOTIFICATIONS permission, app icon, notification icon, dynamic fade timing, and perceptual tuning. 22 new tests (T38–T48 + variants). 5 decisions closed (D-31–D-35), 2 updated (D-5, D-33). ARCHITECTURE.md fully synchronized. 2 new gotchas promoted to DEVPLAN.
