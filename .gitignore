@@ -8,6 +8,8 @@ build/
 
 # Android / SDK-specific (per-machine)
 local.properties
+keystore.properties
+*.jks
 *.iml
 .cxx/
 .externalNativeBuild/
